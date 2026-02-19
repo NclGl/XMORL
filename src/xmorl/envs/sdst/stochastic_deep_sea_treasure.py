@@ -1,5 +1,5 @@
 # QUESTION: does adding bombs still respect the Markov property?
-# updated: bombs only have a chance to explode when the submarine is on the same cell
+# (I made it so the chance of a bomb exploding is always the same for each step)
 
 # TODO: add implosion (?)
 
@@ -140,6 +140,7 @@ class StochasticDeepSeaTreasure(gym.Env, EzPickle):
         float_state=False,
         bomb_positions: Optional[List[Tuple[int, int]]] = None,
         bomb_explosion_prob=0.5,
+        bomb_radius=1,
         bomb_penalty=-20.0,
     ):
         EzPickle.__init__(
@@ -149,6 +150,7 @@ class StochasticDeepSeaTreasure(gym.Env, EzPickle):
             float_state,
             bomb_positions,
             bomb_explosion_prob,
+            bomb_radius,
             bomb_penalty,
         ) # include bomb params in pickling
 
@@ -187,7 +189,7 @@ class StochasticDeepSeaTreasure(gym.Env, EzPickle):
         # action space specification: 1 dimension, 0 up, 1 down, 2 left, 3 right
         self.action_space = Discrete(4)
         self.reward_space = Box(
-            low=np.array([min(bomb_penalty, 0.0), -1]), # allow negative bomb reward
+            low=np.array([min(bomb_penalty, 0.0), -1]), # allow negative bomb reward (otherwise the PF is not well-defined)
             high=np.array([np.max(self.sea_map), -1]),
             dtype=np.float32,
         )
@@ -196,11 +198,12 @@ class StochasticDeepSeaTreasure(gym.Env, EzPickle):
         self.current_state = np.array([0, 0], dtype=np.int32)
 
         self.bomb_positions = set(bomb_positions or []) # store static bombs
-        self.bomb_explosion_prob = bomb_explosion_prob # chance to explode when on bonb cell
+        self.bomb_explosion_prob = bomb_explosion_prob # spontaneous explosion chance
+        self.bomb_radius = bomb_radius # blast radius in Manhattan distance
         self.bomb_penalty = bomb_penalty # penalty applied on explosion
         self._validate_bombs() # validate bomb locations
         
-        self.explosion_cells = set() # explosion overlay
+        self.explosion_cells = set() # set[(row, col)], track explosion overlay cells
 
         # pygame
         ratio = self.sea_map.shape[1] / self.sea_map.shape[0]
@@ -219,9 +222,9 @@ class StochasticDeepSeaTreasure(gym.Env, EzPickle):
         self.treasure_img = None
         self.sea_img = None
         self.rock_img = None
-        self.bomb_img = None
-        self.explosion_img = None
-        self.font = None # was missing in original code?
+        self.bomb_img = None # add bomb image for visualization
+        self.explosion_img = None # add explosion image for visualization
+        self.font = None # was missing?
 
     def _validate_bombs(self):
         for pos in self.bomb_positions:
@@ -240,6 +243,27 @@ class StochasticDeepSeaTreasure(gym.Env, EzPickle):
 
     def _bomb_explodes(self):
         return self.np_random.random() < self.bomb_explosion_prob # stochastic trigger
+
+    def _in_bomb_blast(self, state): # includes bomb cell itself
+        if not self.bomb_positions:
+            return False
+        for bx, by in self.bomb_positions:
+            if abs(state[0] - bx) + abs(state[1] - by) <= self.bomb_radius:
+                return True # within blast radius
+        return False
+    
+    def _explosion_overlay(self, center):
+        cx, cy = center
+        r = self.bomb_radius
+        cells = set()
+        for dx in range(-r, r + 1):
+            rem = r - abs(dx)
+            for dy in range(-rem, rem + 1):
+                x = cx + dx
+                y = cy + dy
+                if self._is_in_bounds([x, y]):
+                    cells.add((x,y))
+        return cells
 
     def pareto_front(self, gamma: float) -> List[np.ndarray]:
         """Return the discounted pareto front of the environment.
@@ -391,11 +415,24 @@ class StochasticDeepSeaTreasure(gym.Env, EzPickle):
             self.current_state = next_state
 
         self.explosion_cells = set()
-        on_bomb = self._is_bomb(self.current_state) # explode on entry
-        if on_bomb and self._bomb_explodes():
+        on_bomb = self._is_bomb(self.current_state) # explode on entry with probability bomb_explosion_prob
+        in_blast = self._in_bomb_blast(self.current_state) # neighbor blast
+        if in_blast and self._bomb_explodes():
             treasure_value = float(self.bomb_penalty) # apply bomb penalty
             terminal = True
-            self.explosion_cells = {(self.current_state[0], self.current_state[1])}
+            if on_bomb:
+                explosion_center = (self.current_state[0], self.current_state[1])
+            else:
+                best = None
+                best_d = None
+                ax, ay = (self.current_state[0], self.current_state[1])
+                for bx, by in self.bomb_positions:
+                    d = abs(ax - bx) + abs(ay - by)
+                    if d <= self.bomb_radius and (best_d is None or d < best_d):
+                        best = (bx, by)
+                        best_d = d
+                explosion_center = best if best is not None else (ax, ay)
+            self.explosion_cells = self._explosion_overlay(explosion_center)
         else:
             treasure_value = self._get_map_value(self.current_state)
             if treasure_value == 0 or treasure_value == -10:
@@ -420,17 +457,15 @@ class StochasticDeepSeaTreasure(gym.Env, EzPickle):
 
 
 if __name__ == "__main__":
-    print(pygame.__file__)
     import mo_gymnasium as mo_gym
     import xmorl.envs.sdst
 
-    env = mo_gym.make(
-        "stochastic-deep-sea-treasure-v0",
-        render_mode="human",
-        # bomb_explosion_prob=1,
-        bomb_positions=[(0, 7), (2, 4), (3, 7)],
-        #   bomb_positions=[(0, 2), (2, 4), (3, 7)],
-    )
+    env = mo_gym.make("stochastic-deep-sea-treasure-v0",
+                      render_mode="human",
+                      bomb_explosion_prob=0.001,
+                      bomb_radius=2,
+                      bomb_positions=[(0, 3), (2, 4), (3, 7)])
+                    #   bomb_positions=[(0, 2)])
     terminated = False
     env.reset()
     while True:
