@@ -41,8 +41,10 @@ Documentation = "https://mo-gymnasium.farama.org"
 
 [tool.setuptools]
 include-package-data = true
+package-dir = {"" = "src"}
 
 [tool.setuptools.packages.find]
+where = ["src"]
 include = ["xmorl", "xmorl.*"]
 
 [tool.setuptools.package-data]

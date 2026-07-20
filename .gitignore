@@ -1,2 +1,4 @@
 *.pyc
 /xmorl.egg-info
+/src/xmorl.egg-info
+src/xmorl/envs/sdst/stochastic_deep_sea_treasure-old.py

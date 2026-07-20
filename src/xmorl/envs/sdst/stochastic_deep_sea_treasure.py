@@ -90,6 +90,14 @@ MIRRORED_MAP = np.array(
     ]
 )
 
+# same probability everywhere within the radius
+def constant_in_radius(distance, radius, base_prob):
+    return base_prob
+
+# probability halves for each additional Manhattan distance away from the bomb
+def half_per_distance(distance, radius, base_prob):
+    return base_prob * (0.5**distance)
+
 class StochasticDeepSeaTreasure(gym.Env, EzPickle):
     """
     ## Description
@@ -116,14 +124,17 @@ class StochasticDeepSeaTreasure(gym.Env, EzPickle):
 
     ## Episode Termination
     The episode terminates when the agent reaches a treasure or explodes.
+    The episode is truncated when the number of steps reaches `max_steps`.
 
     ## Arguments
     - dst_map: the map of the stochastic deep sea treasure. Default is the convex map from Yang et al. (2019). To change, use `mo_gymnasium.make("StochasticDeepSeaTreasure-v0", dst_map=CONCAVE_MAP | MIRRORED_MAP).`
     - float_state: if True, the state is a 2D continuous box with values in [0.0, 1.0] for the x and y coordinates of the submarine.
     - bomb_positions: a list of (x, y) tuples indicating the positions of static bombs in the environment. If the agent steps on a bomb, it receives a penalty and the episode terminates.
-    - bomb_explosion_prob: the probability that a bomb will spontaneously explode at each time step
+    - bomb_explosion_prob: the probability that a bomb will explode at the center (at the location of the bomb).
     - bomb_radius: the blast radius of a bomb explosion in terms of Manhattan distance. If the agent is within this radius when a bomb explodes, it receives the penalty and the episode terminates.
     - bomb_penalty: the penalty applied to the agent when a bomb explodes and affects the agent. This should be a negative value.
+    - bomb_explosion_prob_fn: a function that returns the explosion probability at a certain distance from the bomb center.
+    - max_steps: maximum number of steps per episode before truncation.
 
     ## Credits
     The code was adapted from: [Yang's source](https://github.com/RunzheYang/MORL).
@@ -142,6 +153,8 @@ class StochasticDeepSeaTreasure(gym.Env, EzPickle):
         bomb_explosion_prob=0.5,
         bomb_radius=1,
         bomb_penalty=-20.0,
+        bomb_explosion_prob_fn=constant_in_radius,
+        max_steps=200,
     ):
         EzPickle.__init__(
             self,
@@ -152,6 +165,8 @@ class StochasticDeepSeaTreasure(gym.Env, EzPickle):
             bomb_explosion_prob,
             bomb_radius,
             bomb_penalty,
+            bomb_explosion_prob_fn,
+            max_steps,
         ) # include bomb params in pickling
 
         self.render_mode = render_mode
@@ -201,9 +216,14 @@ class StochasticDeepSeaTreasure(gym.Env, EzPickle):
         self.bomb_explosion_prob = bomb_explosion_prob # spontaneous explosion chance
         self.bomb_radius = bomb_radius # blast radius in Manhattan distance
         self.bomb_penalty = bomb_penalty # penalty applied on explosion
+        self.max_steps = int(max_steps)
+        if self.max_steps <= 0:
+            raise ValueError("max_steps must be a positive integer")
         self._validate_bombs() # validate bomb locations
         
+        self.bomb_explosion_prob_fn = bomb_explosion_prob_fn # function to determine explosion probability based on distance
         self.explosion_cells = set() # set[(row, col)], track explosion overlay cells
+        self.step_count = 0
 
         # pygame
         ratio = self.sea_map.shape[1] / self.sea_map.shape[0]
@@ -244,13 +264,16 @@ class StochasticDeepSeaTreasure(gym.Env, EzPickle):
     def _bomb_explodes(self):
         return self.np_random.random() < self.bomb_explosion_prob # stochastic trigger
 
-    def _in_bomb_blast(self, state): # includes bomb cell itself
+    def _bombs_in_range(self, state): # return list of bombs within blast radius
         if not self.bomb_positions:
-            return False
+            return []
+        sx, sy = state
+        in_range = []
         for bx, by in self.bomb_positions:
-            if abs(state[0] - bx) + abs(state[1] - by) <= self.bomb_radius:
-                return True # within blast radius
-        return False
+            d = abs(sx - bx) + abs(sy - by) # Manhattan distance
+            if d <= self.bomb_radius:
+                in_range.append((bx, by, d))
+        return in_range
     
     def _explosion_overlay(self, center):
         cx, cy = center
@@ -267,13 +290,10 @@ class StochasticDeepSeaTreasure(gym.Env, EzPickle):
 
     def pareto_front(self, gamma: float) -> List[np.ndarray]:
         """Return the discounted pareto front of the environment.
-
         Args:
             gamma: the discount factor.
-
         Returns:
             The discounted pareto front.
-
         """
 
         def discount_time(n):
@@ -402,7 +422,7 @@ class StochasticDeepSeaTreasure(gym.Env, EzPickle):
         else:
             raise ValueError("Invalid map")
         self.explosion_cells = set()
-        self.step_count = 0.0
+        self.step_count = 0
         state = self._get_state()
         if self.render_mode == "human":
             self.render()
@@ -414,39 +434,47 @@ class StochasticDeepSeaTreasure(gym.Env, EzPickle):
         if self._is_valid_state(next_state):
             self.current_state = next_state
 
+        self.step_count += 1
         self.explosion_cells = set()
-        on_bomb = self._is_bomb(self.current_state) # explode on entry with probability bomb_explosion_prob
-        in_blast = self._in_bomb_blast(self.current_state) # neighbor blast
-        if in_blast and self._bomb_explodes():
-            treasure_value = float(self.bomb_penalty) # apply bomb penalty
-            terminal = True
-            if on_bomb:
-                explosion_center = (self.current_state[0], self.current_state[1])
-            else:
-                best = None
-                best_d = None
-                ax, ay = (self.current_state[0], self.current_state[1])
-                for bx, by in self.bomb_positions:
-                    d = abs(ax - bx) + abs(ay - by)
-                    if d <= self.bomb_radius and (best_d is None or d < best_d):
-                        best = (bx, by)
-                        best_d = d
-                explosion_center = best if best is not None else (ax, ay)
-            self.explosion_cells = self._explosion_overlay(explosion_center)
+        bombs_in_range = self._bombs_in_range(self.current_state)
+        exploded_center = None
+        for bx, by, d in bombs_in_range:
+            explosion_prob = self.bomb_explosion_prob_fn(d, self.bomb_radius, self.bomb_explosion_prob)
+            if self.np_random.random() < explosion_prob:
+                exploded_center = (bx, by)
+                break
+
+        terminal_reason = None
+        if exploded_center is not None:
+            treasure_value = self.bomb_penalty # apply bomb penalty
+            terminated = True
+            self.explosion_cells = self._explosion_overlay(exploded_center)
+            terminal_reason = "explosion"
         else:
             treasure_value = self._get_map_value(self.current_state)
             if treasure_value == 0 or treasure_value == -10:
                 treasure_value = 0.0
-                terminal = False
+                terminated = False
             else:
-                terminal = True
+                terminated = True
+                terminal_reason = "treasure"
+
+        truncated = False
+        if (not terminated) and (self.step_count >= self.max_steps):
+            truncated = True
+            terminal_reason = "timeout"
+
         time_penalty = -1.0
         vec_reward = np.array([treasure_value, time_penalty], dtype=np.float32)
 
         state = self._get_state()
+        info = {
+            "terminal_reason": terminal_reason,
+            "step_count": self.step_count,
+        }
         if self.render_mode == "human":
             self.render()
-        return state, vec_reward, terminal, False, {}
+        return state, vec_reward, terminated, truncated, info
 
     def close(self):
         if self.window is not None:
@@ -457,19 +485,22 @@ class StochasticDeepSeaTreasure(gym.Env, EzPickle):
 
 
 if __name__ == "__main__":
-    import mo_gymnasium as mo_gym
-    import xmorl.envs.sdst
+    # import mo_gymnasium as mo_gym
+    # import xmorl.envs.sdst
 
-    env = mo_gym.make("stochastic-deep-sea-treasure-v0",
-                      render_mode="human",
-                      bomb_explosion_prob=0.001,
-                      bomb_radius=2,
-                      bomb_positions=[(0, 3), (2, 4), (3, 7)])
-                    #   bomb_positions=[(0, 2)])
-    terminated = False
-    env.reset()
-    while True:
-        env.render()
-        obs, r, terminated, truncated, info = env.step(env.action_space.sample())
-        if terminated or truncated:
-            env.reset()
+    # env = mo_gym.make("stochastic-deep-sea-treasure-v0",
+    #                   render_mode="human",
+    #                   bomb_explosion_prob=0.001,
+    #                   bomb_radius=2,
+    #                   bomb_positions=[(0, 3), (2, 4), (3, 7)],
+    #                   #   bomb_positions=[(0, 2)],
+    #                   bomb_explosion_prob_fn=half_per_distance,
+    #                 )
+    # terminated = False
+    # env.reset()
+    # while True:
+    #     env.render()
+    #     obs, r, terminated, truncated, info = env.step(env.action_space.sample())
+    #     if terminated or truncated:
+    #         env.reset()
+    print("Done")
