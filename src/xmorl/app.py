@@ -10,8 +10,8 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument(
         "--config",
         type=Path,
-        default=Path("configs/default.yaml"),
-        help="YAML experiment configuration (default: configs/default.yaml)",
+        default=Path("configs/sdst.yaml"),
+        help="YAML experiment configuration (default: configs/sdst.yaml)",
     )
     return parser
 

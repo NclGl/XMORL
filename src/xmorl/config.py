@@ -6,7 +6,7 @@ from typing import Any, Mapping
 
 import yaml
 
-@dataclass(frozen=True)
+@dataclass
 class EnvironmentConfig:
     id: str = "stochastic-deep-sea-treasure-v0"
     kwargs: dict[str, Any] = field(default_factory=dict)
@@ -15,7 +15,7 @@ class EnvironmentConfig:
     )
     objective_names: tuple[str, ...] = ("treasure", "time")
 
-@dataclass(frozen=True)
+@dataclass
 class TrainingConfig:
     seed: int = 0
     num_episodes: int = 500_000
@@ -29,7 +29,7 @@ class TrainingConfig:
     epsilon_decay: float = 0.99999
     progress_every: int = 25_000
 
-@dataclass(frozen=True)
+@dataclass
 class FeedbackConfig:
     enabled: bool = True
     num_moments: int = 4
@@ -37,7 +37,7 @@ class FeedbackConfig:
     preview_samples: int = 24
     render_without_explosions: bool = True
 
-@dataclass(frozen=True)
+@dataclass
 class EvaluationConfig:
     checkpoint_episodes: int = 100
     checkpoint_seed_start: int = 50_000
@@ -45,7 +45,7 @@ class EvaluationConfig:
     final_seed_start: int = 10_000
     max_steps: int = 200
 
-@dataclass(frozen=True)
+@dataclass
 class LoggingConfig:
     output_dir: str = "runs"
     run_name: str | None = None
@@ -56,13 +56,17 @@ class LoggingConfig:
     wandb_entity: str | None = None
     log_every: int = 1_000
 
-@dataclass(frozen=True)
+@dataclass
 class PlottingConfig:
     enabled: bool = True
     show: bool = True
     moving_average_window: int = 50
 
-@dataclass(frozen=True)
+@dataclass
+class LongExplanationConfig:
+    enabled: bool = False
+
+@dataclass
 class AppConfig:
     environment: EnvironmentConfig = field(default_factory=EnvironmentConfig)
     training: TrainingConfig = field(default_factory=TrainingConfig)
@@ -70,6 +74,7 @@ class AppConfig:
     evaluation: EvaluationConfig = field(default_factory=EvaluationConfig)
     logging: LoggingConfig = field(default_factory=LoggingConfig)
     plotting: PlottingConfig = field(default_factory=PlottingConfig)
+    long_explanation: LongExplanationConfig = field(default_factory=LongExplanationConfig)
 
     def to_dict(self) -> dict[str, Any]:
         return asdict(self)
@@ -94,7 +99,7 @@ def load_config(path: str | Path) -> AppConfig:
     if not isinstance(raw, Mapping):
         raise ValueError("The YAML document must contain a mapping at its root")
 
-    known_sections = {"environment", "training", "feedback", "evaluation", "logging", "plotting"}
+    known_sections = {"environment", "training", "feedback", "evaluation", "logging", "plotting", "long_explanation"}
     unknown_sections = set(raw) - known_sections
     if unknown_sections:
         raise ValueError(f"Unknown configuration section(s): {', '.join(sorted(unknown_sections))}")
@@ -105,6 +110,8 @@ def load_config(path: str | Path) -> AppConfig:
     evaluation = _section(raw, "evaluation")
     logging = _section(raw, "logging")
     plotting = _section(raw, "plotting")
+    long_explanation = _section(raw, "long_explanation")
+
     for name, values, cls in (
         ("environment", env, EnvironmentConfig),
         ("training", training, TrainingConfig),
@@ -112,6 +119,7 @@ def load_config(path: str | Path) -> AppConfig:
         ("evaluation", evaluation, EvaluationConfig),
         ("logging", logging, LoggingConfig),
         ("plotting", plotting, PlottingConfig),
+        ("long_explanation", long_explanation, LongExplanationConfig),
     ):
         _reject_unknown(name, values, cls)
 
@@ -131,6 +139,7 @@ def load_config(path: str | Path) -> AppConfig:
         evaluation=EvaluationConfig(**evaluation),
         logging=LoggingConfig(**logging),
         plotting=PlottingConfig(**plotting),
+        long_explanation=LongExplanationConfig(**long_explanation),
     )
     validate_config(config)
     return config

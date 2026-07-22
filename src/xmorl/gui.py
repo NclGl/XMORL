@@ -36,6 +36,7 @@ def build_decision_explanation(
     weights: tuple[float, ...],
     action_names: dict[int, str],
     objective_names: tuple[str, ...],
+    long_explanation: bool = True,
 ) -> str:
     action = entry["action"]
     if action is None:
@@ -53,25 +54,29 @@ def build_decision_explanation(
         policy_reason = f"Going {action_name} had learned long-term utility Q = {chosen_q:.2f}"
     policy_reason += f" and an estimated {success_probabilities[action]:.1%} probability of success."
 
-    lines = ["I made this decision because...", "", policy_reason, "", "Per-objective effect of this step:"]
-    reward = entry.get("reward_vec")
-    if reward is None:
-        lines.append("- No immediate objective reward was produced in this state.")
-    else:
-        reward = np.asarray(reward, dtype=np.float64).reshape(-1)
-        for index, value in enumerate(reward):
-            name = objective_names[index] if index < len(objective_names) else f"objective {index + 1}"
-            weight = weights[index]
-            contribution = weight * float(value)
-            if value > 0:
-                effect = "improves"
-            elif value < 0:
-                effect = "reduces"
-            else:
-                effect = "does not (immediately) change"
-            lines.append(
-                f"- {name.capitalize()}: this action {effect} the objective by {abs(float(value)):.2f}, and with weight {weight:.3g}, its utility contribution is {contribution:+.3f}."
-            )
+    lines = ["I made this decision because...", "", policy_reason]
+
+    if long_explanation:
+        lines += ["", "Per-objective effect of this step:"]
+
+        reward = entry.get("reward_vec")
+        if reward is None:
+            lines.append("- No immediate objective reward was produced in this state.")
+        else:
+            reward = np.asarray(reward, dtype=np.float64).reshape(-1)
+            for index, value in enumerate(reward):
+                name = objective_names[index] if index < len(objective_names) else f"objective {index + 1}"
+                weight = weights[index]
+                contribution = weight * float(value)
+                if value > 0:
+                    effect = "improves"
+                elif value < 0:
+                    effect = "reduces"
+                else:
+                    effect = "does not (immediately) change"
+                lines.append(
+                    f"- {name.capitalize()}: this action {effect} the objective by {abs(float(value)):.2f}, and with weight {weight:.3g}, its utility contribution is {contribution:+.3f}."
+                )
     return "\n".join(lines)
 
 def estimate_state_preview(
@@ -128,6 +133,7 @@ class ReplayViewer:
         gamma_q: float,
         preview_samples: int,
         feedback_number: int | None = None,
+        long_explanation: bool = True,
     ):
         self.entries = replay.get("entries", []) if replay else []
         self.replay_seed = replay.get("seed", 0) if replay else 0
@@ -138,6 +144,7 @@ class ReplayViewer:
         self.gamma_q = gamma_q
         self.preview_samples = preview_samples
         self.feedback_number = feedback_number
+        self.long_explanation = long_explanation
         self.allow_feedback = feedback_number is not None
         self.index = 0
         self.result = FeedbackChoice()
@@ -198,7 +205,7 @@ class ReplayViewer:
         )
         explanation_frame.grid(row=0, column=0, sticky="ew", pady=(0, 14))
         explanation_frame.columnconfigure(0, weight=1)
-        explanation_font = tkfont.Font(family="Segoe UI", size=12, weight="bold")
+        explanation_font = tkfont.Font(family="Segoe UI", size=14, weight="bold")
         self.explanation = tk.Label(
             explanation_frame,
             text="I made this decision because...",
@@ -242,15 +249,18 @@ class ReplayViewer:
             ratios = stage_ratio_map(self.feedback_number)
             ttk.Label(preference, text=f"Impact: small ×{ratios['small']:g}, big ×{ratios['big']:g}, huge ×{ratios['huge']:g}").grid(row=0, column=0, columnspan=3, sticky="w")
             self.direction = tk.StringVar(value="keep")
-            for row, (label, value) in enumerate((("Keep current weights", "keep"), ("Prioritize treasure more", "treasure"), ("Prioritize speed more", "speed")), start=1):
-                ttk.Radiobutton(preference, text=label, variable=self.direction, value=value, command=self._preference_changed).grid(row=row, column=0, columnspan=3, sticky="w")
+            self.objective = tk.IntVar(value=-1)
+            objective_names = self.environment.objective_names
+            for row, label in enumerate(objective_names, start=1):
+                # also store the objective index in the FeedbackChoice
+                ttk.Radiobutton(preference, text=f"Prioritize {label}", variable=self.direction, value=label, command=self._preference_changed).grid(row=row, column=0, columnspan=3, sticky="w")
             self.strength_label = ttk.Label(preference, text="Strength:")
-            self.strength_label.grid(row=4, column=0, sticky="w")
+            self.strength_label.grid(row=len(objective_names) + 1, column=0, sticky="w")
             self.strength = tk.StringVar(value="small")
             self.strength_box = ttk.Combobox(preference, textvariable=self.strength, values=("small", "big", "huge"), state="readonly", width=10)
-            self.strength_box.grid(row=4, column=1, sticky="w")
+            self.strength_box.grid(row=len(objective_names) + 1, column=1, sticky="w")
             self.strength_box.bind("<<ComboboxSelected>>", lambda _: self._preference_changed())
-            ttk.Button(preference, text="Apply choice and continue training", command=self._confirm).grid(row=5, column=0, columnspan=3, sticky="ew", pady=(10, 0))
+            ttk.Button(preference, text="Apply choice and continue training", command=self._confirm).grid(row=len(objective_names) + 2, column=0, columnspan=3, sticky="ew", pady=(10, 0))
             self._preference_changed()
         else:
             ttk.Button(right, text="Close", command=self._close).grid(row=5, column=0, sticky="ew")
@@ -291,7 +301,7 @@ class ReplayViewer:
         else:
             self.strength_label.grid()
             self.strength_box.grid()
-            weights, _ = apply_preference_update(self.current_weights, self.direction.get(), self.strength.get(), self.feedback_number)
+            weights, _ = apply_preference_update(self.current_weights, self.direction.get(), self.objective.get(), self.strength.get(), self.feedback_number)
             self.next_weights.configure(text=f"New weights if applied: {serialize_weights(weights)}")
         if self.entries:
             self._update_view()
@@ -326,7 +336,7 @@ class ReplayViewer:
         current = self._preview(entry, self.current_weights)
         after = current
         if self.allow_feedback and self.direction.get() != "keep":
-            new_weights, _ = apply_preference_update(self.current_weights, self.direction.get(), self.strength.get(), self.feedback_number)
+            new_weights, _ = apply_preference_update(self.current_weights, self.direction.get(), self.objective.get(), self.strength.get(), self.feedback_number)
             after = self._preview(entry, new_weights)
         self.explanation.configure(
             text=build_decision_explanation(
@@ -335,6 +345,7 @@ class ReplayViewer:
                 self.current_weights,
                 self.action_names,
                 self.environment.objective_names,
+                self.long_explanation,
             )
         )
         for item in self.tree.get_children():
@@ -357,7 +368,7 @@ class ReplayViewer:
         self._update_view()
 
     def _confirm(self) -> None:
-        self.result = FeedbackChoice(self.direction.get(), self.strength.get())
+        self.result = FeedbackChoice(self.direction.get(), self.objective.get(), self.strength.get())
         self.root.unbind_all("<MouseWheel>")
         self.root.destroy()
 

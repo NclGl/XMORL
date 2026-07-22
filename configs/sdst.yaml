@@ -1,0 +1,62 @@
+environment:
+  id: stochastic-deep-sea-treasure-v0
+  kwargs:
+    bomb_positions:
+      - [0, 7]
+      - [1, 4]
+      - [3, 9]
+      - [7, 9]
+  action_names:
+    0: up
+    1: down
+    2: left
+    3: right
+  objective_names:
+    - treasure
+    - time
+
+training:
+  seed: 0
+  num_episodes: 50000
+  utility_weights: [0.5, 0.5]
+  alpha_q: 0.3
+  gamma_q: 0.99
+  alpha_p: 0.1
+  gamma_p: 1.0
+  epsilon_start: 1.0
+  epsilon_min: 0.01
+  epsilon_decay: 0.99999
+  progress_every: 25000
+
+feedback:
+  enabled: true
+  num_moments: 4
+  episodes: null
+  preview_samples: 24
+  render_without_explosions: true
+
+evaluation:
+  checkpoint_episodes: 100
+  checkpoint_seed_start: 50000
+  final_episodes: 50
+  final_seed_start: 10000
+  max_steps: 200
+
+logging:
+  output_dir: runs
+  run_name: null
+  legacy_files: true
+  wandb_enabled: true
+  wandb_mode: offline
+  wandb_project: xmorl
+  wandb_entity: null
+  log_every: 5000
+
+plotting:
+  enabled: true
+  show: true
+  moving_average_window: 50
+
+#TODO: create new GUI section if needed
+long_explanation:
+  enabled: false

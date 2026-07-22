@@ -14,7 +14,7 @@ class MemoryLogger:
         self.events.append((step, metrics))
 
 def test_short_training_and_evaluation_smoke():
-    config = load_config("configs/default.yaml")
+    config = load_config("configs/sdst.yaml")
     config = replace(
         config,
         training=replace(config.training, num_episodes=8, progress_every=0),

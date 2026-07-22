@@ -33,9 +33,10 @@ class TabularModel:
             self.visits[state] = np.zeros(self.num_actions, dtype=np.int64)
         return self.q[state], self.p[state], self.visits[state]
 
-@dataclass(frozen=True)
+@dataclass
 class FeedbackChoice:
     direction: str = "keep"
+    objective: int = -1
     strength: str = "small"
 
 @dataclass
@@ -191,7 +192,7 @@ def train(
                 )
                 before = weights
                 weights, explanation = apply_preference_update(
-                    weights, choice.direction, choice.strength, feedback_number
+                    weights, choice.direction, choice.objective, choice.strength, feedback_number
                 )
                 if weights != before:
                     epsilon = max(epsilon, 0.1)
@@ -201,6 +202,7 @@ def train(
                     "episode": episode,
                     "feedback_number": feedback_number,
                     "direction": choice.direction,
+                    "objective": choice.objective,
                     "strength": choice.strength,
                     "weights_before": before,
                     "weights_after": weights,

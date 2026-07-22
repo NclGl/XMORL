@@ -4,7 +4,7 @@ from xmorl.config import load_config
 from xmorl.envs.factory import make_env
 
 def test_yaml_coordinates_are_accepted_as_bomb_positions():
-    config = load_config("configs/default.yaml")
+    config = load_config("configs/sdst.yaml")
     env = make_env(config.environment)
     try:
         observation, _ = env.reset(seed=0)
@@ -14,7 +14,7 @@ def test_yaml_coordinates_are_accepted_as_bomb_positions():
         env.close()
 
 def test_environment_times_out():
-    config = load_config("configs/default.yaml")
+    config = load_config("configs/sdst.yaml")
     env = make_env(config.environment, bomb_explosion_prob=0.0, max_steps=2)
     try:
         env.reset(seed=0)
@@ -27,7 +27,7 @@ def test_environment_times_out():
         env.close()
 
 def test_float_observation_can_be_restored_for_preview():
-    config = load_config("configs/default.yaml")
+    config = load_config("configs/sdst.yaml")
     env = make_env(config.environment, float_state=True, bomb_explosion_prob=0.0)
     try:
         env.reset(seed=0)

@@ -55,6 +55,7 @@ class InteractiveFeedback:
             gamma_q=self.config.training.gamma_q,
             preview_samples=self.config.feedback.preview_samples,
             feedback_number=checkpoint.feedback_number,
+            long_explanation=self.config.long_explanation,
         )
         return viewer.run()
 

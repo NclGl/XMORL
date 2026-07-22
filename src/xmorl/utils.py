@@ -6,8 +6,11 @@ from typing import Any, Iterable
 
 import numpy as np
 
+# TODO: add a flag to keep all the raw weights to normalize whenever needed/shown
+
+# map objectives and impact strengths to a single token with objective index and impact strength depending on the amount of objectives (e.g. "1S" = prioritize objective 1 with small impact)
+
 FEEDBACK_TOKEN_MAP = {
-    "K": ("keep", "small"),
     "TS": ("treasure", "small"),
     "TB": ("treasure", "big"),
     "TH": ("treasure", "huge"),
@@ -41,12 +44,9 @@ def linear_utility(reward: Any, weights: Iterable[float]) -> float:
 
 def normalize_weights(weights: Iterable[float]) -> tuple[float, ...]:
     values = tuple(float(value) for value in weights)
-    if len(values) != 2:
-        raise ValueError("The current preference model requires exactly two objective weights")
-    treasure, time = values
-    if treasure <= 0 or time < 0:
-        raise ValueError("Weights must satisfy treasure > 0 and time >= 0")
-    return 1.0, time / treasure
+    if values[0] <= 0 or any(value < 0 for value in values[1:]):
+        raise ValueError("Weights must satisfy: first objective > 0 and other objectives >= 0")
+    return tuple(float(value) / sum(values) for value in values)
 
 def feedback_schedule(total_episodes: int, num_moments: int, explicit: Iterable[int] | None = None) -> set[int]:
     if explicit is not None:
@@ -64,22 +64,19 @@ def stage_ratio_map(feedback_number: int) -> dict[str, float]:
     return {"small": 2.0, "big": 3.0, "huge": 5.0}
 
 def apply_preference_update(
-    current_weights: Iterable[float], direction: str, strength: str, feedback_number: int
-) -> tuple[tuple[float, float], str]:
-    treasure, time = normalize_weights(current_weights)
+    current_weights: Iterable[float], direction: str, objective: int, strength: str, feedback_number: int
+) -> tuple[tuple[float, ...], str]:
+    obj_weights = normalize_weights(current_weights)
     if direction == "keep":
-        return (treasure, time), "Keeping current weights."
+        return (obj_weights), "Keeping current weights."
     if strength not in stage_ratio_map(feedback_number):
         raise ValueError(f"Unknown feedback strength: {strength}")
     multiplier = stage_ratio_map(feedback_number)[strength]
-    if direction == "treasure":
-        time = max(0.0, time / multiplier)
-    elif direction == "speed":
-        time = (time or 1e-6) * multiplier
-    else:
-        raise ValueError(f"Unknown feedback direction: {direction}")
+    changed_weight = obj_weights[objective] * multiplier
+    new_weights = list(obj_weights)
+    new_weights[objective] = changed_weight
     message = f"Prioritizing {direction} more ({strength}, ratio x{multiplier:g})."
-    return (1.0, time), message
+    return normalize_weights(new_weights), message
 
 def encode_feedback_token(direction: str, strength: str) -> str:
     if direction == "keep":

@@ -17,6 +17,7 @@ def test_decision_explanation_contains_policy_and_objective_attribution():
         weights=(1.0, 0.5),
         action_names={0: "up", 1: "down", 2: "left", 3: "right"},
         objective_names=("treasure", "time"),
+        long_explanation=True
     )
 
     assert explanation.startswith("I made this decision because...")

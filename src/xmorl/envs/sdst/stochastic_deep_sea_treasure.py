@@ -494,7 +494,7 @@ class StochasticDeepSeaTreasure(gym.Env, EzPickle):
             self.clock = None
 
 
-if __name__ == "__main__":
+# if __name__ == "__main__":
     # import mo_gymnasium as mo_gym
     # import xmorl.envs.sdst
 
@@ -513,4 +513,4 @@ if __name__ == "__main__":
     #     obs, r, terminated, truncated, info = env.step(env.action_space.sample())
     #     if terminated or truncated:
     #         env.reset()
-    print("Done")
+    # print("Done")

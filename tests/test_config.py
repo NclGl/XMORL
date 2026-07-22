@@ -3,7 +3,7 @@ import pytest
 from xmorl.config import load_config
 
 def test_default_config_loads():
-    config = load_config("configs/default.yaml")
+    config = load_config("configs/sdst.yaml")
     assert config.environment.id == "stochastic-deep-sea-treasure-v0"
     assert config.environment.action_names[3] == "right"
     assert config.logging.wandb_mode == "offline"
