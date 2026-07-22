@@ -1,0 +1,22 @@
+import pytest
+
+from xmorl.config import load_config
+
+def test_default_config_loads():
+    config = load_config("configs/default.yaml")
+    assert config.environment.id == "stochastic-deep-sea-treasure-v0"
+    assert config.environment.action_names[3] == "right"
+    assert config.logging.wandb_mode == "offline"
+    assert config.training.utility_weights == (0.5, 0.5)
+
+def test_unknown_option_is_rejected(tmp_path):
+    path = tmp_path / "invalid.yaml"
+    path.write_text("training:\n  num_episoeds: 4\n", encoding="utf-8")
+    with pytest.raises(ValueError, match="num_episoeds"):
+        load_config(path)
+
+def test_feedback_episode_range_is_validated(tmp_path):
+    path = tmp_path / "invalid-feedback.yaml"
+    path.write_text("training:\n  num_episodes: 4\nfeedback:\n  episodes: [5]\n", encoding="utf-8")
+    with pytest.raises(ValueError, match="outside the training range"):
+        load_config(path)

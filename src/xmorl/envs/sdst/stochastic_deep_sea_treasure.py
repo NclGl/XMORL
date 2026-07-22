@@ -1,8 +1,3 @@
-# QUESTION: does adding bombs still respect the Markov property?
-# (I made it so the chance of a bomb exploding is always the same for each step)
-
-# TODO: add implosion (?)
-
 from os import path
 from typing import List, Optional, Tuple # add Tuple for bomb positions
 
@@ -11,7 +6,6 @@ import numpy as np
 import pygame
 from gymnasium.spaces import Box, Discrete
 from gymnasium.utils import EzPickle
-
 
 # As in Yang et al. (2019):
 DEFAULT_MAP = np.array(
@@ -212,7 +206,11 @@ class StochasticDeepSeaTreasure(gym.Env, EzPickle):
 
         self.current_state = np.array([0, 0], dtype=np.int32)
 
-        self.bomb_positions = set(bomb_positions or []) # store static bombs
+        # store static bombs
+        self.bomb_positions = {
+            tuple(int(value) for value in position)
+            for position in (bomb_positions or [])
+        }
         self.bomb_explosion_prob = bomb_explosion_prob # spontaneous explosion chance
         self.bomb_radius = bomb_radius # blast radius in Manhattan distance
         self.bomb_penalty = bomb_penalty # penalty applied on explosion
@@ -411,6 +409,18 @@ class StochasticDeepSeaTreasure(gym.Env, EzPickle):
         else:
             state = self.current_state.copy()
         return state
+
+    # this function is used for GUI one-step previews without resetting dynamics
+    def set_state_for_preview(self, observation):
+        """Set a state for GUI one-step previews without resetting dynamics."""
+        state = np.asarray(observation, dtype=np.float32)
+        if self.float_state:
+            scale = np.maximum(np.asarray(self.sea_map.shape, dtype=np.float32) - 1, 1)
+            state = np.rint(state * scale)
+        state = state.astype(np.int32)
+        if not self._is_in_bounds(state):
+            raise ValueError(f"Preview state is outside the map: {tuple(state)}")
+        self.current_state = state
 
     def reset(self, seed=None, **kwargs):
         super().reset(seed=seed)
