@@ -5,7 +5,6 @@ from xmorl.envs.sdst.stochastic_deep_sea_treasure import (
     MIRRORED_MAP,
 )
 
-
 register(
     id="stochastic-deep-sea-treasure-v0",
     entry_point="xmorl.envs.sdst.stochastic_deep_sea_treasure:StochasticDeepSeaTreasure",

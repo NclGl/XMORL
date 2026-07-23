@@ -1,5 +1,10 @@
 environment:
   id: resource-gathering-v0
+  adapter: default
+  success:
+    type: reward
+    indices: [1, 2]
+    condition: any_positive
   action_names:
     0: up
     1: down
@@ -25,7 +30,7 @@ training:
 
 feedback:
   enabled: true
-  num_moments: 9
+  num_moments: 4
   episodes: null
   preview_samples: 24
   render_without_explosions: true

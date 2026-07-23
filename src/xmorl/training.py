@@ -7,6 +7,7 @@ import numpy as np
 
 from xmorl.config import AppConfig
 from xmorl.envs.factory import make_env
+from xmorl.success import success_value
 from xmorl.utils import (
     apply_preference_update,
     feedback_schedule,
@@ -61,12 +62,8 @@ class MetricLogger(Protocol):
 
 FeedbackProvider = Callable[[TrainingCheckpoint], FeedbackChoice]
 
-def success_value(reward: np.ndarray, terminated: bool, truncated: bool, info: dict) -> float:
-    if "success" in info:
-        return float(bool(info["success"]))
-    if truncated or not terminated:
-        return 0.0
-    return float(np.asarray(reward).reshape(-1)[0] > 0)
+def _preference_metric_key(index: int) -> str:
+    return f"preferences/objective_{index + 1}"
 
 def q_p_correlations(model: TabularModel, min_visits: int = 1) -> tuple[float, float]:
     pairs = []
@@ -145,7 +142,7 @@ def train(
                     )
                 done = bool(terminated or truncated)
                 utility = linear_utility(reward, weights)
-                target_p = success_value(reward, terminated, truncated, info)
+                target_p = success_value(reward, terminated, truncated, info, config.environment)
                 visits[action] += 1
 
                 if done:
@@ -179,8 +176,10 @@ def train(
                         "train/epsilon": epsilon,
                         "train/q_p_pearson": pearson,
                         "train/q_p_spearman": spearman,
-                        "preferences/treasure": weights[0],
-                        "preferences/time": weights[1],
+                        **{
+                            _preference_metric_key(index): weight
+                            for index, weight in enumerate(weights)
+                        },
                     },
                     step=episode,
                 )
@@ -212,8 +211,10 @@ def train(
                 logger.log(
                     {
                         "feedback/index": feedback_number,
-                        "preferences/treasure": weights[0],
-                        "preferences/time": weights[1],
+                        **{
+                            _preference_metric_key(index): weight
+                            for index, weight in enumerate(weights)
+                        },
                     },
                     step=episode,
                 )

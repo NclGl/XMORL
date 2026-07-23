@@ -7,7 +7,8 @@ import numpy as np
 
 from xmorl.config import EnvironmentConfig
 from xmorl.envs.factory import make_env, without_explosions
-from xmorl.training import TabularModel, success_value
+from xmorl.success import success_value
+from xmorl.training import TabularModel
 from xmorl.utils import linear_utility, obs_to_state, reset_env_with_seed, set_global_seed
 
 @dataclass
@@ -45,7 +46,7 @@ def rollout(
             vector_return += reward
             scalar_return += linear_utility(reward, weights)
             if terminated or truncated:
-                success = success_value(reward, terminated, truncated, info)
+                success = success_value(reward, terminated, truncated, info, environment)
                 exploded = float(info.get("terminal_reason") == "explosion")
                 timed_out = float(truncated or info.get("terminal_reason") == "timeout")
                 break
@@ -143,7 +144,6 @@ def build_replay(
     finally:
         env.close()
     return {"seed": episode.seed, "entries": entries, "display_explosions_disabled": disable_explosions}
-
 
 def format_summary(summary: dict, weights: tuple[float, ...]) -> str:
     return "\n".join((

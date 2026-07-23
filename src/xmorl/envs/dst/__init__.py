@@ -5,7 +5,6 @@ from xmorl.envs.dst.deep_sea_treasure import (
     MIRRORED_MAP,
 )
 
-
 register(
     id="deep-sea-treasure-v0",
     entry_point="xmorl.envs.dst.deep_sea_treasure:DeepSeaTreasure",

@@ -2,7 +2,6 @@ import numpy as np
 
 from xmorl.gui import build_decision_explanation
 
-
 def test_decision_explanation_contains_policy_and_objective_attribution():
     entry = {
         "action": 3,
@@ -26,7 +25,6 @@ def test_decision_explanation_contains_policy_and_objective_attribution():
     assert "Treasure:" in explanation
     assert "Time:" in explanation
     assert "-0.500" in explanation
-
 
 def test_final_state_explanation_mentions_terminal_reason():
     explanation = build_decision_explanation(

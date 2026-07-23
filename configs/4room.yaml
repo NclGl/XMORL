@@ -1,5 +1,10 @@
 environment:
   id: four-room-v0
+  adapter: default
+  success:
+    type: reward
+    indices: [0, 1, 2]
+    condition: all_positive
   action_names:
     0: left
     1: up

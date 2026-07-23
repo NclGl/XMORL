@@ -7,7 +7,6 @@ import pygame
 from gymnasium.spaces import Box, Discrete
 from gymnasium.utils import EzPickle
 
-
 # As in Yang et al. (2019):
 DEFAULT_MAP = np.array(
     [
@@ -85,7 +84,6 @@ MIRRORED_MAP = np.array(
     ]
 )
 
-
 class DeepSeaTreasure(gym.Env, EzPickle):
     """
     ## Description
@@ -162,8 +160,8 @@ class DeepSeaTreasure(gym.Env, EzPickle):
         # action space specification: 1 dimension, 0 up, 1 down, 2 left, 3 right
         self.action_space = Discrete(4)
         self.reward_space = Box(
-            low=np.array([0, -1]),
-            high=np.array([np.max(self.sea_map), -1]),
+            low=np.array([0, -1], dtype=np.float32),
+            high=np.array([np.max(self.sea_map), -1], dtype=np.float32),
             dtype=np.float32,
         )
         self.reward_dim = 2
@@ -261,6 +259,7 @@ class DeepSeaTreasure(gym.Env, EzPickle):
                 filename = path.join(path.dirname(__file__), "assets", "rock.png")
                 self.rock_img = pygame.transform.scale(pygame.image.load(filename), self.pix_square_size)
 
+            self._load_additional_render_assets()
             self.font = pygame.font.Font(path.join(path.dirname(__file__), "assets", "Minecraft.ttf"), 20)
 
         self.window.blit(self.sea_img, (0, 0))
@@ -275,7 +274,9 @@ class DeepSeaTreasure(gym.Env, EzPickle):
                     img = self.font.render(trailing_space + str(self.sea_map[i, j]), True, (255, 255, 255))
                     self.window.blit(img, np.array([j, i]) * self.pix_square_size + np.array([5, -20]))
 
+        self._draw_before_agent()
         self.window.blit(self.submarine_img, self.current_state[::-1] * self.pix_square_size)
+        self._draw_after_agent()
 
         if self.render_mode == "human":
             pygame.event.pump()
@@ -283,6 +284,15 @@ class DeepSeaTreasure(gym.Env, EzPickle):
             self.clock.tick(self.metadata["render_fps"])
         elif self.render_mode == "rgb_array":
             return np.transpose(np.array(pygame.surfarray.pixels3d(self.window)), axes=(1, 0, 2))
+
+    def _load_additional_render_assets(self):
+        """Load assets required by subclasses when the render surface is created."""
+
+    def _draw_before_agent(self):
+        """Draw subclass-specific elements that should appear behind the agent."""
+
+    def _draw_after_agent(self):
+        """Draw subclass-specific elements that should appear in front of the agent."""
 
     def _get_state(self):
         if self.float_state:
@@ -332,7 +342,6 @@ class DeepSeaTreasure(gym.Env, EzPickle):
             pygame.quit()
             self.window = None
             self.clock = None
-
 
 if __name__ == "__main__":
     import mo_gymnasium as mo_gym

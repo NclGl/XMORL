@@ -8,6 +8,7 @@ import numpy as np
 from PIL import Image, ImageTk
 
 from xmorl.config import EnvironmentConfig
+from xmorl.environment_adapters import environment_adapter
 from xmorl.envs.factory import make_env
 from xmorl.training import FeedbackChoice, TabularModel
 from xmorl.utils import (
@@ -22,12 +23,17 @@ from xmorl.utils import (
 def _format_probability(value: float) -> str:
     return f"{100 * float(value):.1f}%"
 
-def _introspection_probability(q_values: np.ndarray, terminal_utility: float, stochasticity: float) -> np.ndarray:
-    result = np.zeros_like(q_values, dtype=np.float64)
-    valid = q_values > 0
-    if np.any(valid):
-        result[valid] = (1 - stochasticity) * (0.5 * np.log10(q_values[valid] / terminal_utility) + 1)
-    return np.clip(result, 0, 1)
+def _relative_preview_score(q_values: np.ndarray, stochasticity: float) -> np.ndarray:
+    if q_values.size == 0:
+        return q_values.copy()
+    q_min = float(np.min(q_values))
+    q_max = float(np.max(q_values))
+    span = max(q_max - q_min, 1e-8)
+    scores = (q_values - q_min) / span
+    if np.isclose(q_max, q_min):
+        scores = np.full_like(q_values, 0.5, dtype=np.float64)
+    uniform = np.full_like(q_values, 1.0 / len(q_values), dtype=np.float64)
+    return np.clip((1 - stochasticity) * scores + stochasticity * uniform, 0, 1)
 
 # toggle short and longer explanation
 def build_decision_explanation(
@@ -52,7 +58,7 @@ def build_decision_explanation(
         policy_reason = f"Going {action_name} had the highest learned long-term utility (Q = {chosen_q:.2f})"
     else:
         policy_reason = f"Going {action_name} had learned long-term utility Q = {chosen_q:.2f}"
-    policy_reason += f" and an estimated {success_probabilities[action]:.1%} probability of success."
+    policy_reason += f" and an estimated {success_probabilities[action]:.1%} probability of success in this state."
 
     lines = ["I made this decision because...", "", policy_reason]
 
@@ -89,23 +95,17 @@ def estimate_state_preview(
     samples: int,
     fallback: np.ndarray,
 ) -> np.ndarray:
-    env = make_env(environment)
-    unwrapped = env.unwrapped
-    if not hasattr(unwrapped, "set_state_for_preview") and not hasattr(unwrapped, "current_state"):
-        env.close()
+    adapter = environment_adapter(environment.adapter)
+    if not adapter.supports_state_preview:
         return fallback.copy()
+    env = make_env(environment)
     q_values = np.zeros(model.num_actions, dtype=np.float64)
     try:
         for action in range(model.num_actions):
             estimates = []
             for sample in range(samples):
                 reset_env_with_seed(env, seed + action * 1_000 + sample)
-                if hasattr(unwrapped, "set_state_for_preview"):
-                    unwrapped.set_state_for_preview(state)
-                else:
-                    unwrapped.current_state = np.asarray(state, dtype=np.int32)
-                if hasattr(unwrapped, "step_count"):
-                    unwrapped.step_count = 0
+                adapter.set_preview_state(env, state)
                 next_observation, reward, terminated, truncated, _ = env.step(action)
                 estimate = linear_utility(reward, weights)
                 if not (terminated or truncated):
@@ -113,10 +113,7 @@ def estimate_state_preview(
                     estimate += gamma_q * float(np.max(next_q))
                 estimates.append(estimate)
             q_values[action] = np.mean(estimates)
-        sea_map = getattr(unwrapped, "sea_map", None)
-        terminal = max(linear_utility((float(np.max(sea_map)), -1), weights), 1e-8) if sea_map is not None else max(float(np.max(q_values)), 1e-8)
-        stochasticity = float(getattr(unwrapped, "bomb_explosion_prob", 0.0))
-        return _introspection_probability(q_values, terminal, stochasticity)
+        return _relative_preview_score(q_values, adapter.preview_stochasticity(env))
     finally:
         env.close()
 
@@ -156,6 +153,8 @@ class ReplayViewer:
         self.root.geometry("1320x900")
         self.root.minsize(1000, 700)
         self.root.protocol("WM_DELETE_WINDOW", self._close)
+        self.root.bind_all("<Left>", self._on_left_key)
+        self.root.bind_all("<Right>", self._on_right_key)
         self._build(summary)
         self._update_view()
 
@@ -235,9 +234,9 @@ class ReplayViewer:
         table.grid(row=4, column=0, sticky="nsew", pady=(0, 10))
         table.columnconfigure(0, weight=1)
         self.details = tk.BooleanVar(value=False)
-        ttk.Checkbutton(table, text="Show Q details", variable=self.details, command=self._update_columns).grid(row=0, column=0, sticky="w")
+        ttk.Checkbutton(table, text="Show value details", variable=self.details, command=self._update_columns).grid(row=0, column=0, sticky="w")
         self.tree = ttk.Treeview(table, columns=("action", "q", "now", "after", "delta"), show="headings", height=6)
-        for key, label, width in (("action", "Action", 115), ("q", "Q", 80), ("now", "Success now", 100), ("after", "Success after", 105), ("delta", "Δ success", 90)):
+        for key, label, width in (("action", "Action", 115), ("q", "Q", 80), ("now", "Now", 100), ("after", "After", 105), ("delta", "Δ", 90)):
             self.tree.heading(key, text=label)
             self.tree.column(key, width=width, anchor="center")
         self.tree.grid(row=1, column=0, sticky="nsew")
@@ -250,17 +249,29 @@ class ReplayViewer:
             ttk.Label(preference, text=f"Impact: small ×{ratios['small']:g}, big ×{ratios['big']:g}, huge ×{ratios['huge']:g}").grid(row=0, column=0, columnspan=3, sticky="w")
             self.direction = tk.StringVar(value="keep")
             self.objective = tk.IntVar(value=-1)
+            ttk.Radiobutton(
+                preference,
+                text="Keep current weights",
+                variable=self.direction,
+                value="keep",
+                command=self._preference_changed,
+            ).grid(row=1, column=0, columnspan=3, sticky="w")
             objective_names = self.environment.objective_names
-            for row, label in enumerate(objective_names, start=1):
-                # also store the objective index in the FeedbackChoice
-                ttk.Radiobutton(preference, text=f"Prioritize {label}", variable=self.direction, value=label, command=self._preference_changed).grid(row=row, column=0, columnspan=3, sticky="w")
+            for row, label in enumerate(objective_names, start=2):
+                ttk.Radiobutton(
+                    preference,
+                    text=f"Prioritize {label}",
+                    variable=self.direction,
+                    value=label,
+                    command=lambda selected_label=label, selected_index=row - 2: self._objective_changed(selected_label, selected_index),
+                ).grid(row=row, column=0, columnspan=3, sticky="w")
             self.strength_label = ttk.Label(preference, text="Strength:")
-            self.strength_label.grid(row=len(objective_names) + 1, column=0, sticky="w")
+            self.strength_label.grid(row=len(objective_names) + 2, column=0, sticky="w")
             self.strength = tk.StringVar(value="small")
             self.strength_box = ttk.Combobox(preference, textvariable=self.strength, values=("small", "big", "huge"), state="readonly", width=10)
-            self.strength_box.grid(row=len(objective_names) + 1, column=1, sticky="w")
+            self.strength_box.grid(row=len(objective_names) + 2, column=1, sticky="w")
             self.strength_box.bind("<<ComboboxSelected>>", lambda _: self._preference_changed())
-            ttk.Button(preference, text="Apply choice and continue training", command=self._confirm).grid(row=len(objective_names) + 2, column=0, columnspan=3, sticky="ew", pady=(10, 0))
+            ttk.Button(preference, text="Apply choice and continue training", command=self._confirm).grid(row=len(objective_names) + 3, column=0, columnspan=3, sticky="ew", pady=(10, 0))
             self._preference_changed()
         else:
             ttk.Button(right, text="Close", command=self._close).grid(row=5, column=0, sticky="ew")
@@ -305,6 +316,11 @@ class ReplayViewer:
             self.next_weights.configure(text=f"New weights if applied: {serialize_weights(weights)}")
         if self.entries:
             self._update_view()
+
+    def _objective_changed(self, label: str, index: int) -> None:
+        self.direction.set(label)
+        self.objective.set(index)
+        self._preference_changed()
 
     def _preview(self, entry: dict, weights: tuple[float, ...]) -> np.ndarray:
         key = (self.index, weights)
@@ -367,13 +383,25 @@ class ReplayViewer:
         self.index = min(len(self.entries) - 1, self.index + 1)
         self._update_view()
 
+    def _on_left_key(self, _event) -> str:
+        self._back()
+        return "break"
+
+    def _on_right_key(self, _event) -> str:
+        self._forward()
+        return "break"
+
     def _confirm(self) -> None:
         self.result = FeedbackChoice(self.direction.get(), self.objective.get(), self.strength.get())
         self.root.unbind_all("<MouseWheel>")
+        self.root.unbind_all("<Left>")
+        self.root.unbind_all("<Right>")
         self.root.destroy()
 
     def _close(self) -> None:
         self.root.unbind_all("<MouseWheel>")
+        self.root.unbind_all("<Left>")
+        self.root.unbind_all("<Right>")
         self.root.destroy()
 
     def run(self) -> FeedbackChoice:

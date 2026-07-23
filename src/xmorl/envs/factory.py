@@ -36,4 +36,6 @@ def without_explosions(config: EnvironmentConfig) -> EnvironmentConfig:
         kwargs=kwargs,
         action_names=dict(config.action_names),
         objective_names=tuple(config.objective_names),
+        adapter=config.adapter,
+        success=config.success,
     )

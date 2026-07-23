@@ -7,13 +7,23 @@ from typing import Any, Mapping
 import yaml
 
 @dataclass
+class SuccessConfig:
+    type: str = "auto"
+    key: str = "success"
+    indices: tuple[int, ...] = ()
+    condition: str = "any_positive"
+    threshold: float = 0.0
+    values: tuple[str, ...] = ()
+    require_terminated: bool = True
+
+@dataclass
 class EnvironmentConfig:
-    id: str = "stochastic-deep-sea-treasure-v0"
+    id: str = ""
     kwargs: dict[str, Any] = field(default_factory=dict)
-    action_names: dict[int, str] = field(
-        default_factory=lambda: {0: "up", 1: "down", 2: "left", 3: "right"}
-    )
-    objective_names: tuple[str, ...] = ("treasure", "time")
+    action_names: dict[int, str] = field(default_factory=dict)
+    objective_names: tuple[str, ...] = ("objective 1", "objective 2")
+    adapter: str = "default"
+    success: SuccessConfig = field(default_factory=SuccessConfig)
 
 @dataclass
 class TrainingConfig:
@@ -123,6 +133,19 @@ def load_config(path: str | Path) -> AppConfig:
     ):
         _reject_unknown(name, values, cls)
 
+    if "success" in env:
+        success = env["success"]
+        if not isinstance(success, Mapping):
+            raise ValueError("Configuration section 'environment.success' must be a mapping")
+        success = dict(success)
+        _reject_unknown("environment.success", success, SuccessConfig)
+        if "indices" in success:
+            success["indices"] = tuple(int(value) for value in success["indices"])
+        if "values" in success:
+            success["values"] = tuple(str(value) for value in success["values"])
+        if "threshold" in success:
+            success["threshold"] = float(success["threshold"])
+        env["success"] = SuccessConfig(**success)
     if "action_names" in env:
         env["action_names"] = {int(key): str(value) for key, value in env["action_names"].items()}
     if "objective_names" in env:
@@ -145,6 +168,26 @@ def load_config(path: str | Path) -> AppConfig:
     return config
 
 def validate_config(config: AppConfig) -> None:
+    from xmorl.environment_adapters import environment_adapter_names
+
+    if config.environment.adapter not in environment_adapter_names():
+        available = ", ".join(sorted(environment_adapter_names()))
+        raise ValueError(f"environment.adapter must be one of: {available}")
+    success = config.environment.success
+    if success.type not in {"auto", "info", "reward", "terminal_reason"}:
+        raise ValueError("environment.success.type must be auto, info, reward, or terminal_reason")
+    if success.condition not in {"any_positive", "all_positive", "sum_positive"}:
+        raise ValueError("environment.success.condition must be any_positive, all_positive, or sum_positive")
+    if success.type == "info" and not success.key:
+        raise ValueError("environment.success.key cannot be empty for an info rule")
+    if success.type == "reward":
+        if not success.indices:
+            raise ValueError("environment.success.indices cannot be empty for a reward rule")
+        invalid_indices = [index for index in success.indices if index < 0 or index >= len(config.environment.objective_names)]
+        if invalid_indices:
+            raise ValueError(f"environment.success.indices outside the objective range: {invalid_indices}")
+    if success.type == "terminal_reason" and not success.values:
+        raise ValueError("environment.success.values cannot be empty for a terminal_reason rule")
     if config.training.num_episodes <= 0:
         raise ValueError("training.num_episodes must be positive")
     if not config.training.utility_weights:

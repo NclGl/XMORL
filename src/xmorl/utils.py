@@ -8,16 +8,14 @@ import numpy as np
 
 # TODO: add a flag to keep all the raw weights to normalize whenever needed/shown
 
-# map objectives and impact strengths to a single token with objective index and impact strength depending on the amount of objectives (e.g. "1S" = prioritize objective 1 with small impact)
-
-FEEDBACK_TOKEN_MAP = {
-    "TS": ("treasure", "small"),
-    "TB": ("treasure", "big"),
-    "TH": ("treasure", "huge"),
-    "SS": ("speed", "small"),
-    "SB": ("speed", "big"),
-    "SH": ("speed", "huge"),
-}
+# FEEDBACK_TOKEN_MAP = {
+#     "O1S": ("objective 1", "small"),
+#     "O1B": ("objective 1", "big"),
+#     "O1H": ("objective 1", "huge"),
+#     "O2S": ("objective 2", "small"),
+#     "O2B": ("objective 2", "big"),
+#     "O2H": ("objective 2", "huge"),
+# }
 
 def set_global_seed(seed: int) -> None:
     os.environ["PYTHONHASHSEED"] = str(seed)
@@ -78,13 +76,13 @@ def apply_preference_update(
     message = f"Prioritizing {direction} more ({strength}, ratio x{multiplier:g})."
     return normalize_weights(new_weights), message
 
-def encode_feedback_token(direction: str, strength: str) -> str:
-    if direction == "keep":
-        return "K"
-    for token, choice in FEEDBACK_TOKEN_MAP.items():
-        if choice == (direction, strength):
-            return token
-    raise ValueError(f"Cannot encode feedback choice {direction}/{strength}")
+# def encode_feedback_token(direction: str, strength: str) -> str:
+#     if direction == "keep":
+#         return "K"
+#     for token, choice in FEEDBACK_TOKEN_MAP.items():
+#         if choice == (direction, strength):
+#             return token
+#     raise ValueError(f"Cannot encode feedback choice {direction}/{strength}")
 
 def serialize_weights(weights: Iterable[float]) -> str:
     values = tuple(weights)

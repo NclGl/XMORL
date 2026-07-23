@@ -1,87 +1,18 @@
 from os import path
-from typing import List, Optional, Tuple # add Tuple for bomb positions
+from typing import List, Optional, Tuple
 
-import gymnasium as gym
 import numpy as np
 import pygame
-from gymnasium.spaces import Box, Discrete
+from gymnasium.spaces import Box
 from gymnasium.utils import EzPickle
 
-# As in Yang et al. (2019):
-DEFAULT_MAP = np.array(
-    [
-        [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0],
-        [0.7, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0],
-        [-10, 8.2, 0, 0, 0, 0, 0, 0, 0, 0, 0],
-        [-10, -10, 11.5, 0, 0, 0, 0, 0, 0, 0, 0],
-        [-10, -10, -10, 14.0, 15.1, 16.1, 0, 0, 0, 0, 0],
-        [-10, -10, -10, -10, -10, -10, 0, 0, 0, 0, 0],
-        [-10, -10, -10, -10, -10, -10, 0, 0, 0, 0, 0],
-        [-10, -10, -10, -10, -10, -10, 19.6, 20.3, 0, 0, 0],
-        [-10, -10, -10, -10, -10, -10, -10, -10, 0, 0, 0],
-        [-10, -10, -10, -10, -10, -10, -10, -10, 22.4, 0, 0],
-        [-10, -10, -10, -10, -10, -10, -10, -10, -10, 23.7, 0],
-    ]
-)
-
-CONVEX_FRONT = [
-    np.array([0.7, -1]),
-    np.array([8.2, -3]),
-    np.array([11.5, -5]),
-    np.array([14.0, -7]),
-    np.array([15.1, -8]),
-    np.array([16.1, -9]),
-    np.array([19.6, -13]),
-    np.array([20.3, -14]),
-    np.array([22.4, -17]),
-    np.array([23.7, -19]),
-]
-
-# As in Vamplew et al. (2018):
-CONCAVE_MAP = np.array(
-    [
-        [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0],
-        [1.0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0],
-        [-10, 2.0, 0, 0, 0, 0, 0, 0, 0, 0, 0],
-        [-10, -10, 3.0, 0, 0, 0, 0, 0, 0, 0, 0],
-        [-10, -10, -10, 5.0, 8.0, 16.0, 0, 0, 0, 0, 0],
-        [-10, -10, -10, -10, -10, -10, 0, 0, 0, 0, 0],
-        [-10, -10, -10, -10, -10, -10, 0, 0, 0, 0, 0],
-        [-10, -10, -10, -10, -10, -10, 24.0, 50.0, 0, 0, 0],
-        [-10, -10, -10, -10, -10, -10, -10, -10, 0, 0, 0],
-        [-10, -10, -10, -10, -10, -10, -10, -10, 74.0, 0, 0],
-        [-10, -10, -10, -10, -10, -10, -10, -10, -10, 124.0, 0],
-    ]
-)
-
-CONCAVE_FRONT = [
-    np.array([1.0, -1]),
-    np.array([2.0, -3]),
-    np.array([3.0, -5]),
-    np.array([5.0, -7]),
-    np.array([8.0, -8]),
-    np.array([16.0, -9]),
-    np.array([24.0, -13]),
-    np.array([50.0, -14]),
-    np.array([74.0, -17]),
-    np.array([124.0, -19]),
-]
-
-# As in Felten et al. 2022, same PF as concave, just harder map
-MIRRORED_MAP = np.array(
-    [
-        [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0],
-        [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1.0, 0, 0, 0, 0, 0, 0, 0, 0, 0],
-        [0, 0, 0, 0, 0, 0, 0, 0, 0, -10, -10, 2.0, 0, 0, 0, 0, 0, 0, 0, 0],
-        [0, 0, 0, 0, 0, 0, 0, 0, -10, -10, -10, -10, 3.0, 0, 0, 0, 0, 0, 0, 0],
-        [0, 0, 0, 0, 0, 0, 0, -10, -10, -10, -10, -10, -10, 5.0, 8.0, 16.0, 0, 0, 0, 0],
-        [0, 0, 0, 0, -10, -10, -10, -10, -10, -10, -10, -10, -10, -10, -10, -10, 0, 0, 0, 0],
-        [0, 0, 0, 0, -10, -10, -10, -10, -10, -10, -10, -10, -10, -10, -10, -10, 0, 0, 0, 0],
-        [0, 0, 0, 0, -10, -10, -10, -10, -10, -10, -10, -10, -10, -10, -10, -10, 24.0, 50.0, 0, 0],
-        [0, 0, -10, -10, -10, -10, -10, -10, -10, -10, -10, -10, -10, -10, -10, -10, -10, -10, 0, 0],
-        [0, 0, -10, -10, -10, -10, -10, -10, -10, -10, -10, -10, -10, -10, -10, -10, -10, -10, 74.0, 0],
-        [0, -10, -10, -10, -10, -10, -10, -10, -10, -10, -10, -10, -10, -10, -10, -10, -10, -10, -10, 124.0],
-    ]
+from xmorl.envs.dst.deep_sea_treasure import (
+    CONCAVE_FRONT,
+    CONCAVE_MAP,
+    CONVEX_FRONT,
+    DEFAULT_MAP,
+    MIRRORED_MAP,
+    DeepSeaTreasure,
 )
 
 # same probability everywhere within the radius
@@ -92,51 +23,12 @@ def constant_in_radius(distance, radius, base_prob):
 def half_per_distance(distance, radius, base_prob):
     return base_prob * (0.5**distance)
 
-class StochasticDeepSeaTreasure(gym.Env, EzPickle):
+class StochasticDeepSeaTreasure(DeepSeaTreasure):
+    """Deep Sea Treasure with stochastic bomb termination.
+
+    The environment behaves like DeepSeaTreasure with static bombs
+    that can terminate an episode when the submarine enters their radius
     """
-    ## Description
-    The Deep Sea Treasure environment is classic MORL problem in which the agent controls a submarine in a 2D grid world.
-
-    ## Observation Space
-    The observation space is a 2D discrete box with values in [0, 10] for the x and y coordinates of the submarine.
-
-    ## Action Space
-    The actions is a discrete space where:
-    - 0: up
-    - 1: down
-    - 2: left
-    - 3: right
-
-    ## Reward Space
-    The reward is 2-dimensional:
-    - time penalty: -1 at each time step
-    - treasure value: the value of the treasure at the current position
-    - bomb penalty: if the agent steps on a bomb or is caught in a bomb blast, it receives the bomb penalty and the episode terminates
-
-    ## Starting State
-    The starting state is always the same: (0, 0)
-
-    ## Episode Termination
-    The episode terminates when the agent reaches a treasure or explodes.
-    The episode is truncated when the number of steps reaches `max_steps`.
-
-    ## Arguments
-    - dst_map: the map of the stochastic deep sea treasure. Default is the convex map from Yang et al. (2019). To change, use `mo_gymnasium.make("StochasticDeepSeaTreasure-v0", dst_map=CONCAVE_MAP | MIRRORED_MAP).`
-    - float_state: if True, the state is a 2D continuous box with values in [0.0, 1.0] for the x and y coordinates of the submarine.
-    - bomb_positions: a list of (x, y) tuples indicating the positions of static bombs in the environment. If the agent steps on a bomb, it receives a penalty and the episode terminates.
-    - bomb_explosion_prob: the probability that a bomb will explode at the center (at the location of the bomb).
-    - bomb_radius: the blast radius of a bomb explosion in terms of Manhattan distance. If the agent is within this radius when a bomb explodes, it receives the penalty and the episode terminates.
-    - bomb_penalty: the penalty applied to the agent when a bomb explodes and affects the agent. This should be a negative value.
-    - bomb_explosion_prob_fn: a function that returns the explosion probability at a certain distance from the bomb center.
-    - max_steps: maximum number of steps per episode before truncation.
-
-    ## Credits
-    The code was adapted from: [Yang's source](https://github.com/RunzheYang/MORL).
-    The background art is from https://ansimuz.itch.io/underwater-fantasy-pixel-art-environment.
-    The submarine art was created with the assistance of DALL·E 2.
-    """
-
-    metadata = {"render_modes": ["human", "rgb_array"], "render_fps": 4}
 
     def __init__(
         self,
@@ -150,6 +42,11 @@ class StochasticDeepSeaTreasure(gym.Env, EzPickle):
         bomb_explosion_prob_fn=constant_in_radius,
         max_steps=200,
     ):
+        super().__init__(
+            render_mode=render_mode,
+            dst_map=dst_map,
+            float_state=float_state,
+        )
         EzPickle.__init__(
             self,
             render_mode,
@@ -161,221 +58,94 @@ class StochasticDeepSeaTreasure(gym.Env, EzPickle):
             bomb_penalty,
             bomb_explosion_prob_fn,
             max_steps,
-        ) # include bomb params in pickling
+        )
 
-        self.render_mode = render_mode
-        self.float_state = float_state
-
-        # The map of the deep sea treasure (convex version)
-        self.sea_map = dst_map
-        if dst_map.shape[0] == DEFAULT_MAP.shape[0] and dst_map.shape[1] == DEFAULT_MAP.shape[1]:
-            if np.all(dst_map == DEFAULT_MAP):
-                self.map_name = "convex"
-            elif np.all(dst_map == CONCAVE_MAP):
-                self.map_name = "concave"
-            else:
-                raise ValueError("Invalid map")
-        elif np.all(dst_map == MIRRORED_MAP):
-            self.map_name = "mirrored"
-        else:
-            raise ValueError("Invalid map")
-        self._pareto_front = CONVEX_FRONT if self.map_name == "convex" else CONCAVE_FRONT
-
-        self.dir = {
-            0: np.array([-1, 0], dtype=np.int32), # up
-            1: np.array([1, 0], dtype=np.int32), # down
-            2: np.array([0, -1], dtype=np.int32), # left
-            3: np.array([0, 1], dtype=np.int32), # right
-        }
-
-        # state space specification: 2-dimensional discrete box
-        obs_type = np.float32 if self.float_state else np.int32
-        if self.float_state:
-            self.observation_space = Box(low=0.0, high=1.0, shape=(2,), dtype=obs_type)
-        else:
-            self.observation_space = Box(low=0, high=len(self.sea_map[0]), shape=(2,), dtype=obs_type)
-
-        # action space specification: 1 dimension, 0 up, 1 down, 2 left, 3 right
-        self.action_space = Discrete(4)
         self.reward_space = Box(
-            low=np.array([min(bomb_penalty, 0.0), -1]), # allow negative bomb reward (otherwise the PF is not well-defined)
-            high=np.array([np.max(self.sea_map), -1]),
+            low=np.array([min(bomb_penalty, 0.0), -1], dtype=np.float32),
+            high=np.array([np.max(self.sea_map), -1], dtype=np.float32),
             dtype=np.float32,
         )
-        self.reward_dim = 2
+        self.preview_terminal_reward_vector = np.array(
+            [float(np.max(self.sea_map)), -1.0],
+            dtype=np.float64,
+        )
+        self.preview_stochasticity = float(bomb_explosion_prob)
 
-        self.current_state = np.array([0, 0], dtype=np.int32)
-
-        # store static bombs
         self.bomb_positions = {
             tuple(int(value) for value in position)
             for position in (bomb_positions or [])
         }
-        self.bomb_explosion_prob = bomb_explosion_prob # spontaneous explosion chance
-        self.bomb_radius = bomb_radius # blast radius in Manhattan distance
-        self.bomb_penalty = bomb_penalty # penalty applied on explosion
+        self.bomb_explosion_prob = bomb_explosion_prob
+        self.bomb_radius = bomb_radius
+        self.bomb_penalty = bomb_penalty
         self.max_steps = int(max_steps)
         if self.max_steps <= 0:
             raise ValueError("max_steps must be a positive integer")
-        self._validate_bombs() # validate bomb locations
-        
-        self.bomb_explosion_prob_fn = bomb_explosion_prob_fn # function to determine explosion probability based on distance
-        self.explosion_cells = set() # set[(row, col)], track explosion overlay cells
-        self.step_count = 0
+        self._validate_bombs()
 
-        # pygame
-        ratio = self.sea_map.shape[1] / self.sea_map.shape[0]
-        padding = 10
-        self.pix_inside = (min(64 * self.sea_map.shape[1], 512) * ratio, min(64 * self.sea_map.shape[0], 512))
-        # adding some padding on the sides
-        self.window_size = (self.pix_inside[0] + 2 * padding, self.pix_inside[1])
-        # The size of a single grid square in pixels
-        self.pix_square_size = (
-            self.pix_inside[0] // self.sea_map.shape[1] + 1,
-            self.pix_inside[1] // self.sea_map.shape[0] + 1, # watch out for axis inversions here
-        )
-        self.window = None
-        self.clock = None
-        self.submarine_img = None
-        self.treasure_img = None
-        self.sea_img = None
-        self.rock_img = None
-        self.bomb_img = None # add bomb image for visualization
-        self.explosion_img = None # add explosion image for visualization
-        self.font = None # was missing?
+        self.bomb_explosion_prob_fn = bomb_explosion_prob_fn
+        self.explosion_cells = set()
+        self.step_count = 0
+        self.bomb_img = None
+        self.explosion_img = None
 
     def _validate_bombs(self):
         for pos in self.bomb_positions:
             if not self._is_in_bounds(np.array(pos, dtype=np.int32)):
-                raise ValueError(f"Bomb out of bounds: {pos}") # invalid bomb location
+                raise ValueError(f"Bomb out of bounds: {pos}")
             if self._get_map_value(pos) == -10:
-                raise ValueError(f"Bomb on rock: {pos}") # bomb on a rock cell
+                raise ValueError(f"Bomb on rock: {pos}")
 
     def _is_in_bounds(self, state):
         if self.map_name == "mirrored":
-            return 0 <= state[0] <= 10 and 0 <= state[1] <= 19 # mirrored bounds
-        return 0 <= state[0] <= 10 and 0 <= state[1] <= 10 # standard bounds
+            return 0 <= state[0] <= 10 and 0 <= state[1] <= 19
+        return 0 <= state[0] <= 10 and 0 <= state[1] <= 10
 
     def _is_bomb(self, state):
-        return tuple(state) in self.bomb_positions # bomb cell check
+        return tuple(state) in self.bomb_positions
 
     def _bomb_explodes(self):
-        return self.np_random.random() < self.bomb_explosion_prob # stochastic trigger
+        return self.np_random.random() < self.bomb_explosion_prob
 
-    def _bombs_in_range(self, state): # return list of bombs within blast radius
+    def _bombs_in_range(self, state):
         if not self.bomb_positions:
             return []
+
         sx, sy = state
         in_range = []
         for bx, by in self.bomb_positions:
-            d = abs(sx - bx) + abs(sy - by) # Manhattan distance
-            if d <= self.bomb_radius:
-                in_range.append((bx, by, d))
+            distance = abs(sx - bx) + abs(sy - by)
+            if distance <= self.bomb_radius:
+                in_range.append((bx, by, distance))
         return in_range
-    
+
     def _explosion_overlay(self, center):
         cx, cy = center
-        r = self.bomb_radius
         cells = set()
-        for dx in range(-r, r + 1):
-            rem = r - abs(dx)
-            for dy in range(-rem, rem + 1):
+        for dx in range(-self.bomb_radius, self.bomb_radius + 1):
+            remaining = self.bomb_radius - abs(dx)
+            for dy in range(-remaining, remaining + 1):
                 x = cx + dx
                 y = cy + dy
                 if self._is_in_bounds([x, y]):
-                    cells.add((x,y))
+                    cells.add((x, y))
         return cells
 
-    def pareto_front(self, gamma: float) -> List[np.ndarray]:
-        """Return the discounted pareto front of the environment.
-        Args:
-            gamma: the discount factor.
-        Returns:
-            The discounted pareto front.
-        """
-
-        def discount_time(n):
-            """Discounted time for a given number of steps."""
-            return np.sum(np.array([gamma**i for i in range(int(n))]))
-
-        # The first element is discounted based on the number of steps to reach there (which is -p[1])
-        # e.g. if it takes 1 step to reach 0.7, the discounted value is 0.7 * gamma ** 0
-        discounted_front = [np.array([p[0] * gamma ** (-p[1] - 1), -discount_time(-p[1])]) for p in self._pareto_front]
-        return discounted_front
-
-    def _get_map_value(self, pos):
-        return self.sea_map[pos[0]][pos[1]]
-
-    def _is_valid_state(self, state):
-        if self.map_name == "mirrored":
-            if state[0] >= 0 and state[0] <= 10 and state[1] >= 0 and state[1] <= 19:
-                if self._get_map_value(state) != -10:
-                    return True
-            return False
-        else:
-            if state[0] >= 0 and state[0] <= 10 and state[1] >= 0 and state[1] <= 10:
-                if self._get_map_value(state) != -10:
-                    return True
-            return False
-
-    def render(self):
-        if self.render_mode is None:
-            assert self.spec is not None
-            gym.logger.warn(
-                "You are calling render method without specifying any render mode. "
-                "You can specify the render_mode at initialization, "
-                f'e.g. mo_gym.make("{self.spec.id}", render_mode="rgb_array")'
+    def _load_additional_render_assets(self):
+        if self.bomb_img is None:
+            filename = path.join(path.dirname(__file__), "assets", "bomb.png")
+            self.bomb_img = pygame.transform.scale(
+                pygame.image.load(filename),
+                self.pix_square_size,
             )
-            return
+        if self.explosion_img is None:
+            filename = path.join(path.dirname(__file__), "assets", "explosion.png")
+            self.explosion_img = pygame.transform.scale(
+                pygame.image.load(filename),
+                self.pix_square_size,
+            )
 
-        if self.window is None:
-            pygame.init()
-
-            if self.render_mode == "human":
-                pygame.display.init()
-                pygame.display.set_caption("Deep Sea Treasure")
-                self.window = pygame.display.set_mode(self.window_size)
-            else:
-                self.window = pygame.Surface(self.window_size)
-
-            if self.clock is None:
-                self.clock = pygame.time.Clock()
-
-            if self.submarine_img is None:
-                filename = path.join(path.dirname(__file__), "assets", "submarine.png")
-                self.submarine_img = pygame.transform.scale(pygame.image.load(filename), self.pix_square_size)
-                self.submarine_img = pygame.transform.flip(self.submarine_img, flip_x=True, flip_y=False)
-            if self.treasure_img is None:
-                filename = path.join(path.dirname(__file__), "assets", "treasure.png")
-                self.treasure_img = pygame.transform.scale(pygame.image.load(filename), self.pix_square_size)
-            if self.sea_img is None:
-                filename = path.join(path.dirname(__file__), "assets", "sea_bg.png")
-                self.sea_img = pygame.image.load(filename)
-                self.sea_img = pygame.transform.scale(self.sea_img, self.window_size)
-            if self.rock_img is None:
-                filename = path.join(path.dirname(__file__), "assets", "rock.png")
-                self.rock_img = pygame.transform.scale(pygame.image.load(filename), self.pix_square_size)
-            if self.bomb_img is None:
-                filename = path.join(path.dirname(__file__), "assets", "bomb.png")
-                self.bomb_img = pygame.transform.scale(pygame.image.load(filename), self.pix_square_size)
-            if self.explosion_img is None:
-                filename = path.join(path.dirname(__file__), "assets", "explosion.png")
-                self.explosion_img = pygame.transform.scale(pygame.image.load(filename), self.pix_square_size)
-
-            self.font = pygame.font.Font(path.join(path.dirname(__file__), "assets", "Minecraft.ttf"), 20)
-
-        self.window.blit(self.sea_img, (0, 0))
-
-        for i in range(self.sea_map.shape[0]):
-            for j in range(self.sea_map.shape[1]):
-                if self.sea_map[i, j] == -10:
-                    self.window.blit(self.rock_img, np.array([j, i]) * self.pix_square_size)
-                elif self.sea_map[i, j] != 0:
-                    self.window.blit(self.treasure_img, np.array([j, i]) * self.pix_square_size)
-                    trailing_space = " " if self.sea_map[i, j] < 10 else ""
-                    img = self.font.render(trailing_space + str(self.sea_map[i, j]), True, (255, 255, 255))
-                    self.window.blit(img, np.array([j, i]) * self.pix_square_size + np.array([5, -20]))
-
+    def _draw_before_agent(self):
         for bx, by in self.bomb_positions:
             bomb_rect = pygame.Rect(
                 by * self.pix_square_size[0] + 8,
@@ -385,37 +155,24 @@ class StochasticDeepSeaTreasure(gym.Env, EzPickle):
             )
             self.window.blit(self.bomb_img, bomb_rect)
 
-        self.window.blit(self.submarine_img, self.current_state[::-1] * self.pix_square_size)
-
+    def _draw_after_agent(self):
         for ex, ey in self.explosion_cells:
-            exp_rect = pygame.Rect(
+            explosion_rect = pygame.Rect(
                 ey * self.pix_square_size[0] + 8,
                 ex * self.pix_square_size[1] + 8,
                 self.pix_square_size[0] - 16,
                 self.pix_square_size[1] - 16,
             )
-            self.window.blit(self.explosion_img, exp_rect)
+            self.window.blit(self.explosion_img, explosion_rect)
 
-        if self.render_mode == "human":
-            pygame.event.pump()
-            pygame.display.update()
-            self.clock.tick(self.metadata["render_fps"])
-        elif self.render_mode == "rgb_array":
-            return np.transpose(np.array(pygame.surfarray.pixels3d(self.window)), axes=(1, 0, 2))
-
-    def _get_state(self):
-        if self.float_state:
-            state = self.current_state.astype(np.float32) * 0.1
-        else:
-            state = self.current_state.copy()
-        return state
-
-    # this function is used for GUI one-step previews without resetting dynamics
     def set_state_for_preview(self, observation):
         """Set a state for GUI one-step previews without resetting dynamics."""
         state = np.asarray(observation, dtype=np.float32)
         if self.float_state:
-            scale = np.maximum(np.asarray(self.sea_map.shape, dtype=np.float32) - 1, 1)
+            scale = np.maximum(
+                np.asarray(self.sea_map.shape, dtype=np.float32) - 1,
+                1,
+            )
             state = np.rint(state * scale)
         state = state.astype(np.int32)
         if not self._is_in_bounds(state):
@@ -423,40 +180,31 @@ class StochasticDeepSeaTreasure(gym.Env, EzPickle):
         self.current_state = state
 
     def reset(self, seed=None, **kwargs):
-        super().reset(seed=seed)
-
-        if self.map_name == "convex" or self.map_name == "concave":
-            self.current_state = np.array([0, 0], dtype=np.int32)
-        elif self.map_name == "mirrored":
-            self.current_state = np.array([0, 10], dtype=np.int32)
-        else:
-            raise ValueError("Invalid map")
         self.explosion_cells = set()
         self.step_count = 0
-        state = self._get_state()
-        if self.render_mode == "human":
-            self.render()
-        return state, {}
+        return super().reset(seed=seed, **kwargs)
 
     def step(self, action):
         next_state = self.current_state + self.dir[int(action)]
-
         if self._is_valid_state(next_state):
             self.current_state = next_state
 
         self.step_count += 1
         self.explosion_cells = set()
-        bombs_in_range = self._bombs_in_range(self.current_state)
         exploded_center = None
-        for bx, by, d in bombs_in_range:
-            explosion_prob = self.bomb_explosion_prob_fn(d, self.bomb_radius, self.bomb_explosion_prob)
+        for bx, by, distance in self._bombs_in_range(self.current_state):
+            explosion_prob = self.bomb_explosion_prob_fn(
+                distance,
+                self.bomb_radius,
+                self.bomb_explosion_prob,
+            )
             if self.np_random.random() < explosion_prob:
                 exploded_center = (bx, by)
                 break
 
         terminal_reason = None
         if exploded_center is not None:
-            treasure_value = self.bomb_penalty # apply bomb penalty
+            treasure_value = self.bomb_penalty
             terminated = True
             self.explosion_cells = self._explosion_overlay(exploded_center)
             terminal_reason = "explosion"
@@ -470,13 +218,11 @@ class StochasticDeepSeaTreasure(gym.Env, EzPickle):
                 terminal_reason = "treasure"
 
         truncated = False
-        if (not terminated) and (self.step_count >= self.max_steps):
+        if not terminated and self.step_count >= self.max_steps:
             truncated = True
             terminal_reason = "timeout"
 
-        time_penalty = -1.0
-        vec_reward = np.array([treasure_value, time_penalty], dtype=np.float32)
-
+        vec_reward = np.array([treasure_value, -1.0], dtype=np.float32)
         state = self._get_state()
         info = {
             "terminal_reason": terminal_reason,
@@ -485,32 +231,3 @@ class StochasticDeepSeaTreasure(gym.Env, EzPickle):
         if self.render_mode == "human":
             self.render()
         return state, vec_reward, terminated, truncated, info
-
-    def close(self):
-        if self.window is not None:
-            pygame.display.quit()
-            pygame.quit()
-            self.window = None
-            self.clock = None
-
-
-# if __name__ == "__main__":
-    # import mo_gymnasium as mo_gym
-    # import xmorl.envs.sdst
-
-    # env = mo_gym.make("stochastic-deep-sea-treasure-v0",
-    #                   render_mode="human",
-    #                   bomb_explosion_prob=0.001,
-    #                   bomb_radius=2,
-    #                   bomb_positions=[(0, 3), (2, 4), (3, 7)],
-    #                   #   bomb_positions=[(0, 2)],
-    #                   bomb_explosion_prob_fn=half_per_distance,
-    #                 )
-    # terminated = False
-    # env.reset()
-    # while True:
-    #     env.render()
-    #     obs, r, terminated, truncated, info = env.step(env.action_space.sample())
-    #     if terminated or truncated:
-    #         env.reset()
-    # print("Done")

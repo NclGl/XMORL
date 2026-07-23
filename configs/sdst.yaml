@@ -1,5 +1,10 @@
 environment:
   id: stochastic-deep-sea-treasure-v0
+  adapter: sdst
+  success:
+    type: reward
+    indices: [0]
+    condition: any_positive
   kwargs:
     bomb_positions:
       - [0, 7]
