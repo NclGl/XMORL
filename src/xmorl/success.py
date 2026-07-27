@@ -12,6 +12,9 @@ def success_value(
     info: dict,
     environment: EnvironmentConfig | None = None,
 ) -> float:
+    """
+    Resolve success through info, an adapter, or the configured fallback rule
+    """
     if "success" in info:
         return float(bool(info["success"]))
     if environment is None:
@@ -40,6 +43,9 @@ def success_value(
     return float(np.sum(selected) > rule.threshold)
 
 def _automatic_success(reward: np.ndarray, terminated: bool, truncated: bool) -> float:
+    """
+    Treat the first reward value as a success indicator if the episode terminated normally
+    """
     if truncated or not terminated:
         return 0.0
     values = np.asarray(reward).reshape(-1)

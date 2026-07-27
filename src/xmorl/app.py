@@ -6,6 +6,9 @@ from pathlib import Path
 from xmorl.config import load_config
 
 def build_parser() -> argparse.ArgumentParser:
+    """
+    Build the command-line parser for selecting an experiment configuration
+    """
     parser = argparse.ArgumentParser(description="Train and inspect an interactive XMORL agent")
     parser.add_argument(
         "--config",
@@ -16,6 +19,9 @@ def build_parser() -> argparse.ArgumentParser:
     return parser
 
 def main() -> None:
+    """
+    Load the requested configuration and run its experiment
+    """
     args = build_parser().parse_args()
     from xmorl.experiments import run_experiment
 

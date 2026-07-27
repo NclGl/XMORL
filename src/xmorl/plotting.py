@@ -6,12 +6,18 @@ import matplotlib.pyplot as plt
 import numpy as np
 
 def moving_average(values: np.ndarray, window: int) -> np.ndarray:
+    """
+    Smooth a sequence with a valid window arithmetic mean
+    """
     values = np.asarray(values, dtype=np.float64)
     if window <= 1 or len(values) < window:
         return values.copy()
     return np.convolve(values, np.ones(window) / window, mode="valid")
 
 def plot_learning(result, path: str | Path, window: int = 50, show: bool = True) -> Path:
+    """
+    Save learning curves and mark episodes where preferences changed
+    """
     path = Path(path)
     fig, axes = plt.subplots(2, 1, figsize=(11, 8), sharex=True)
     episodes = np.arange(1, len(result.scalar_returns) + 1)

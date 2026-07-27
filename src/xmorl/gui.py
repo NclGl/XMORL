@@ -5,7 +5,7 @@ from tkinter import font as tkfont
 from tkinter import ttk
 
 import numpy as np
-from PIL import Image, ImageTk
+from PIL import Image, ImageDraw, ImageTk
 
 from xmorl.config import EnvironmentConfig
 from xmorl.environment_adapters import environment_adapter
@@ -18,12 +18,19 @@ from xmorl.utils import (
     reset_env_with_seed,
     serialize_weights,
     stage_ratio_map,
+    cell_to_pixel,
 )
 
 def _format_probability(value: float) -> str:
+    """
+    Format a probability as a percentage for the action table
+    """
     return f"{100 * float(value):.1f}%"
 
 def _relative_preview_score(q_values: np.ndarray, stochasticity: float) -> np.ndarray:
+    """
+    Normalize preview utilities and blend in environmental uncertainty
+    """
     if q_values.size == 0:
         return q_values.copy()
     q_min = float(np.min(q_values))
@@ -35,7 +42,6 @@ def _relative_preview_score(q_values: np.ndarray, stochasticity: float) -> np.nd
     uniform = np.full_like(q_values, 1.0 / len(q_values), dtype=np.float64)
     return np.clip((1 - stochasticity) * scores + stochasticity * uniform, 0, 1)
 
-# toggle short and longer explanation
 def build_decision_explanation(
     entry: dict,
     success_probabilities: np.ndarray,
@@ -44,6 +50,9 @@ def build_decision_explanation(
     objective_names: tuple[str, ...],
     long_explanation: bool = True,
 ) -> str:
+    """
+    Explain the selected action through utility, success, and objective effects
+    """
     action = entry["action"]
     if action is None:
         reason = entry.get("terminal_reason")
@@ -95,6 +104,9 @@ def estimate_state_preview(
     samples: int,
     fallback: np.ndarray,
 ) -> np.ndarray:
+    """
+    Estimate each action after one sampled step from a recorded state
+    """
     adapter = environment_adapter(environment.adapter)
     if not adapter.supports_state_preview:
         return fallback.copy()
@@ -118,6 +130,10 @@ def estimate_state_preview(
         env.close()
 
 class ReplayViewer:
+    """
+    Let a user inspect one replay and optionally revise objective priorities
+    """
+
     def __init__(
         self,
         title: str,
@@ -133,11 +149,29 @@ class ReplayViewer:
         long_explanation: bool = True,
         trajectory_line: bool = True,
     ):
+        """
+        Prepare replay state, cached visuals, and the interactive window
+        """
         self.entries = replay.get("entries", []) if replay else []
         self.replay_seed = replay.get("seed", 0) if replay else 0
         self.trajectory = [entry.get("state") for entry in self.entries]
         adapter = environment_adapter(environment.adapter)
-        # self.env_shape = adapter.get_shape(make_env(environment))
+        self.env_shape = None
+        if self.entries and trajectory_line:
+            env = make_env(environment)
+            try:
+                unwrapped = env.unwrapped
+                for attribute in ("sea_map", "map", "maze"):
+                    grid = getattr(unwrapped, attribute, None)
+                    if grid is not None and np.ndim(grid) >= 2:
+                        self.env_shape = tuple(int(value) for value in np.shape(grid)[:2])
+                        break
+                if self.env_shape is None:
+                    shape = adapter.get_shape(env)
+                    if shape is not None and len(shape) >= 2 and all(value > 0 for value in shape[:2]):
+                        self.env_shape = tuple(int(value) for value in shape[:2])
+            finally:
+                env.close()
         self.current_weights = current_weights
         self.action_names = action_names
         self.environment = environment
@@ -152,6 +186,7 @@ class ReplayViewer:
         self.result = FeedbackChoice()
         self._photo = None
         self._preview_cache: dict[tuple, np.ndarray] = {}
+        self._trajectory_frames: dict[int, Image.Image] = {}
 
         self.root = tk.Tk()
         self.root.title(title)
@@ -164,6 +199,9 @@ class ReplayViewer:
         self._update_view()
 
     def _build(self, summary: str) -> None:
+        """
+        Build replay, explanation, action, navigation, and feedback controls
+        """
         main = ttk.Frame(self.root, padding=12)
         main.pack(fill="both", expand=True)
         main.columnconfigure(0, weight=3)
@@ -283,12 +321,21 @@ class ReplayViewer:
         self._update_columns()
 
     def _update_right_scroll_region(self, _event=None) -> None:
+        """
+        Keep the scrollable region aligned with the right panel's contents
+        """
         self.right_canvas.configure(scrollregion=self.right_canvas.bbox("all"))
 
     def _resize_right_panel(self, event) -> None:
+        """
+        Match the embedded right panel to the available canvas width
+        """
         self.right_canvas.itemconfigure(self._right_window, width=event.width)
 
     def _scroll_right_panel(self, event) -> None:
+        """
+        Scroll only when the pointer is over the replay's right panel
+        """
         widget = self.root.winfo_containing(event.x_root, event.y_root)
         while widget is not None:
             if widget == self.right_canvas:
@@ -299,6 +346,9 @@ class ReplayViewer:
             widget = getattr(widget, "master", None)
 
     def _update_columns(self) -> None:
+        """
+        Show action columns relevant to detail and feedback modes
+        """
         columns = ["action"]
         if self.details.get():
             columns.append("q")
@@ -310,6 +360,9 @@ class ReplayViewer:
             self._update_view()
 
     def _preference_changed(self) -> None:
+        """
+        Preview the weights and action scores implied by the current choice
+        """
         if self.direction.get() == "keep":
             self.strength_label.grid_remove()
             self.strength_box.grid_remove()
@@ -323,11 +376,17 @@ class ReplayViewer:
             self._update_view()
 
     def _objective_changed(self, label: str, index: int) -> None:
+        """
+        Select an objective and refresh its preference preview
+        """
         self.direction.set(label)
         self.objective.set(index)
         self._preference_changed()
 
     def _preview(self, entry: dict, weights: tuple[float, ...]) -> np.ndarray:
+        """
+        Return a cached action preview for one replay step and weight vector
+        """
         key = (self.index, weights)
         if key not in self._preview_cache:
             self._preview_cache[key] = estimate_state_preview(
@@ -338,21 +397,33 @@ class ReplayViewer:
         return self._preview_cache[key]
 
     def _update_view(self) -> None:
+        """
+        Render the current step and synchronize its explanation and action table
+        """
         if not self.entries:
             self.image_label.configure(text="No successful replay is available.")
             self.back.state(["disabled"])
             self.forward.state(["disabled"])
             return
-        # TODO: implement trajectory overlay
-        background = self.entries[-1]["frame"]
-        env_shape = getattr(self.environment, "grid_shape", None)
-        # print(f"background shape: {background.shape}")
-        # points = [
-        #     cell_to_pixel(cell, background.shape, self.trajectory) for cell in self.trajectory
-        # ]
-
         entry = self.entries[self.index]
-        image = Image.fromarray(entry["frame"])
+        image = self._trajectory_frames.get(self.index)
+        if image is None:
+            image = Image.fromarray(entry["frame"])
+            if self.trajectory_line and self.env_shape is not None:
+                points = [
+                    cell_to_pixel(state[:2], entry["frame"].shape, self.env_shape)
+                    for state in self.trajectory[: self.index + 1]
+                    if state is not None and len(state) >= 2
+                ]
+                if len(points) > 1:
+                    width = max(2, min(image.size) // 150)
+                    ImageDraw.Draw(image, "RGBA").line(
+                        points,
+                        fill=(255, 64, 64, 220),
+                        width=width,
+                        joint="curve",
+                    )
+            self._trajectory_frames[self.index] = image
         scale = min(1.0, 760 / image.width, 700 / image.height)
         if scale < 1:
             image = image.resize((int(image.width * scale), int(image.height * scale)), Image.Resampling.NEAREST)
@@ -389,22 +460,37 @@ class ReplayViewer:
             self.tree.insert("", "end", values=(label, f"{q_value:.4f}", _format_probability(current[index]), _format_probability(after[index]), f"{delta:+.1f} pp"), tags=tag)
 
     def _back(self) -> None:
+        """
+        Move to the preceding replay state
+        """
         self.index = max(0, self.index - 1)
         self._update_view()
 
     def _forward(self) -> None:
+        """
+        Move to the following replay state
+        """
         self.index = min(len(self.entries) - 1, self.index + 1)
         self._update_view()
 
     def _on_left_key(self, _event) -> str:
+        """
+        Handle keyboard navigation to the preceding state
+        """
         self._back()
         return "break"
 
     def _on_right_key(self, _event) -> str:
+        """
+        Handle keyboard navigation to the following state
+        """
         self._forward()
         return "break"
 
     def _confirm(self) -> None:
+        """
+        Store the selected feedback and close the viewer
+        """
         self.result = FeedbackChoice(self.direction.get(), self.objective.get(), self.strength.get())
         self.root.unbind_all("<MouseWheel>")
         self.root.unbind_all("<Left>")
@@ -412,11 +498,17 @@ class ReplayViewer:
         self.root.destroy()
 
     def _close(self) -> None:
+        """
+        Close the viewer without changing the default feedback choice
+        """
         self.root.unbind_all("<MouseWheel>")
         self.root.unbind_all("<Left>")
         self.root.unbind_all("<Right>")
         self.root.destroy()
 
     def run(self) -> FeedbackChoice:
+        """
+        Run the GUI until closure and return its feedback choice
+        """
         self.root.mainloop()
         return self.result

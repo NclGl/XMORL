@@ -11,8 +11,19 @@ from xmorl.success import success_value
 from xmorl.training import TabularModel
 from xmorl.utils import linear_utility, obs_to_state, reset_env_with_seed, set_global_seed
 
+# NOTE
+# at a feedback moment:
+# - the current model is evaluated over 100 fixed seeds
+# - each rollout uses the greedy policy with the current preference weights (no exploration)
+# - successful episodes are preferred (code selects the episode whose scalar return is closest to the successful episodes' mean return, and whose length is closest to the mean length)
+# - if none of the 100 episodes succeeds, the same procedure is applied to all episodes, regardless of success
+
 @dataclass
 class EpisodeResult:
+    """
+    Record the outcome and action sequence of one greedy rollout
+    """
+
     seed: int
     scalar_return: float
     vector_return: np.ndarray
@@ -29,6 +40,9 @@ def rollout(
     seed: int,
     max_steps: int,
 ) -> EpisodeResult:
+    """
+    Run the current greedy policy once without updating the model
+    """
     env = make_env(environment)
     try:
         observation, _ = reset_env_with_seed(env, seed)
@@ -65,6 +79,9 @@ def evaluate(
     seeds: Iterable[int],
     max_steps: int,
 ) -> tuple[list[EpisodeResult], dict]:
+    """
+    Evaluate fixed seeds and summarize return, success, and failure rates
+    """
     results = [rollout(environment, model, weights, int(seed), max_steps) for seed in seeds]
     if not results:
         raise ValueError("Evaluation requires at least one seed")
@@ -84,6 +101,9 @@ def evaluate(
     return results, summary
 
 def representative_episode(results: list[EpisodeResult], successful_only: bool = True) -> EpisodeResult | None:
+    """
+    Select the episode nearest the candidates' mean return, then mean length
+    """
     candidates = [item for item in results if item.success] if successful_only else list(results)
     if not candidates:
         return None
@@ -92,6 +112,9 @@ def representative_episode(results: list[EpisodeResult], successful_only: bool =
     return min(candidates, key=lambda item: (abs(item.scalar_return - mean_return), abs(item.length - mean_length), item.seed))
 
 def best_episode(results: list[EpisodeResult], successful_only: bool = True) -> EpisodeResult | None:
+    """
+    Select the candidate with the highest scalar utility return
+    """
     candidates = [item for item in results if item.success] if successful_only else list(results)
     return max(candidates, key=lambda item: item.scalar_return) if candidates else None
 
@@ -102,6 +125,9 @@ def build_replay(
     episode: EpisodeResult,
     disable_explosions: bool,
 ) -> dict:
+    """
+    Replay recorded actions and capture frames and decision data for the GUI
+    """
     replay_config = without_explosions(environment) if disable_explosions else environment
     env = make_env(replay_config, render_mode="rgb_array")
     entries = []
@@ -137,6 +163,7 @@ def build_replay(
             if terminated or truncated:
                 break
         q_values, p_values, _ = model.values(state)
+        # final state rendered separately
         entries.append({
             "index": len(entries), "frame": np.asarray(env.render()), "state": state,
             "q_values": q_values.copy(), "p_values": p_values.copy(), "action": None,
@@ -148,6 +175,9 @@ def build_replay(
     return {"seed": episode.seed, "entries": entries, "display_explosions_disabled": disable_explosions}
 
 def format_summary(summary: dict, weights: tuple[float, ...]) -> str:
+    """
+    Format evaluation metrics and current preferences for the replay viewer
+    """
     return "\n".join((
         f"Current weights: {weights}",
         f"Mean utility return: {summary['mean_return_scalar']:.4f} ± {summary['std_return_scalar']:.4f}",

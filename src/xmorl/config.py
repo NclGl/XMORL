@@ -8,6 +8,10 @@ import yaml
 
 @dataclass
 class SuccessConfig:
+    """
+    Describe how an environment outcome is classified as successful
+    """
+
     type: str = "auto"
     key: str = "success"
     indices: tuple[int, ...] = ()
@@ -18,6 +22,10 @@ class SuccessConfig:
 
 @dataclass
 class EnvironmentConfig:
+    """
+    Identify an environment and the names XMORL uses to explain it
+    """
+
     id: str = ""
     kwargs: dict[str, Any] = field(default_factory=dict)
     action_names: dict[int, str] = field(default_factory=dict)
@@ -27,6 +35,10 @@ class EnvironmentConfig:
 
 @dataclass
 class TrainingConfig:
+    """
+    Configure tabular learning, exploration, and utility discounting
+    """
+
     seed: int = 0
     num_episodes: int = 500_000
     utility_weights: tuple[float, ...] = (0.5, 0.5)
@@ -41,6 +53,10 @@ class TrainingConfig:
 
 @dataclass
 class FeedbackConfig:
+    """
+    Configure when and how human preference feedback is collected
+    """
+
     enabled: bool = True
     num_moments: int = 4
     episodes: tuple[int, ...] | None = None
@@ -49,6 +65,10 @@ class FeedbackConfig:
 
 @dataclass
 class EvaluationConfig:
+    """
+    Configure the fixed-seed checkpoint and final evaluation batches
+    """
+
     checkpoint_episodes: int = 100
     checkpoint_seed_start: int = 50_000
     final_episodes: int = 50
@@ -57,6 +77,10 @@ class EvaluationConfig:
 
 @dataclass
 class LoggingConfig:
+    """
+    Configure local run artifacts and optional Weights & Biases logging
+    """
+
     output_dir: str = "runs"
     run_name: str | None = None
     legacy_files: bool = True
@@ -68,18 +92,30 @@ class LoggingConfig:
 
 @dataclass
 class PlottingConfig:
+    """
+    Configure learning-curve generation and display
+    """
+
     enabled: bool = True
     show: bool = True
     moving_average_window: int = 50
 
 @dataclass
 class GUIConfig:
+    """
+    Configure gui details
+    """
+
     enabled: bool = True
     long_explanation: bool = True
     trajectory_line: bool = True
 
 @dataclass
 class AppConfig:
+    """
+    Collect every experiment setting into one validated object
+    """
+
     environment: EnvironmentConfig = field(default_factory=EnvironmentConfig)
     training: TrainingConfig = field(default_factory=TrainingConfig)
     feedback: FeedbackConfig = field(default_factory=FeedbackConfig)
@@ -89,15 +125,24 @@ class AppConfig:
     gui: GUIConfig = field(default_factory=GUIConfig)
 
     def to_dict(self) -> dict[str, Any]:
+        """
+        Return a serialization-ready view of the full configuration
+        """
         return asdict(self)
 
 def _section(data: Mapping[str, Any], name: str) -> dict[str, Any]:
+    """
+    Read one YAML section
+    """
     value = data.get(name, {})
     if not isinstance(value, Mapping):
         raise ValueError(f"Configuration section '{name}' must be a mapping")
     return dict(value)
 
 def _reject_unknown(section: str, values: Mapping[str, Any], cls: type) -> None:
+    """
+    Reject configuration keys that are not fields of the target dataclass
+    """
     allowed = set(cls.__dataclass_fields__)
     unknown = set(values) - allowed
     if unknown:
@@ -105,6 +150,9 @@ def _reject_unknown(section: str, values: Mapping[str, Any], cls: type) -> None:
         raise ValueError(f"Unknown option(s) in '{section}': {names}")
 
 def load_config(path: str | Path) -> AppConfig:
+    """
+    Load YAML, normalize collection types, and return a validated configuration
+    """
     config_path = Path(path)
     with config_path.open("r", encoding="utf-8") as handle:
         raw = yaml.safe_load(handle) or {}
@@ -171,6 +219,9 @@ def load_config(path: str | Path) -> AppConfig:
     return config
 
 def validate_config(config: AppConfig) -> None:
+    """
+    Reject settings that would make training or interpretation inconsistent
+    """
     from xmorl.environment_adapters import environment_adapter_names
 
     if config.environment.adapter not in environment_adapter_names():

@@ -10,10 +10,17 @@ from xmorl.training import FeedbackChoice, TrainingCheckpoint, train
 
 @dataclass
 class InteractiveFeedback:
+    """
+    Validate a checkpoint and collect a preference choice through its replay
+    """
+
     config: AppConfig
     logger: RunLogger
 
     def __call__(self, checkpoint: TrainingCheckpoint) -> FeedbackChoice:
+        """
+        Evaluate the policy, show a representative replay, and return feedback
+        """
         settings = self.config.evaluation
         seeds = range(settings.checkpoint_seed_start, settings.checkpoint_seed_start + settings.checkpoint_episodes)
         results, summary = evaluate(
@@ -61,6 +68,9 @@ class InteractiveFeedback:
         return viewer.run()
 
 def run_experiment(config: AppConfig):
+    """
+    Run the complete XMORL lifecycle and save its results
+    """
     with RunLogger(config) as logger:
         feedback = InteractiveFeedback(config, logger) if config.feedback.enabled else None
         result = train(config, logger, feedback_provider=feedback)

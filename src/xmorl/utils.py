@@ -18,11 +18,17 @@ import numpy as np
 # }
 
 def set_global_seed(seed: int) -> None:
+    """
+    Seed Python and NumPy for reproducibility
+    """
     os.environ["PYTHONHASHSEED"] = str(seed)
     random.seed(seed)
     np.random.seed(seed)
 
 def reset_env_with_seed(env: Any, seed: int):
+    """
+    Reset an environment and seed its sampling spaces consistently
+    """
     observation, info = env.reset(seed=seed)
     for space_name in ("action_space", "observation_space"):
         space = getattr(env, space_name, None)
@@ -34,19 +40,31 @@ def reset_env_with_seed(env: Any, seed: int):
     return observation, info
 
 def obs_to_state(observation: Any) -> tuple[int | float, ...]:
+    """
+    Convert an observation into a tabular state
+    """
     values = np.asarray(observation).reshape(-1)
     return tuple(int(value) if float(value).is_integer() else float(value) for value in values)
 
 def linear_utility(reward: Any, weights: Iterable[float]) -> float:
+    """
+    Scalarize a reward vector with the current objective weights
+    """
     return float(np.dot(np.asarray(tuple(weights), dtype=np.float64), np.asarray(reward, dtype=np.float64)))
 
 def normalize_weights(weights: Iterable[float]) -> tuple[float, ...]:
+    """
+    Validate nonnegative preferences and normalize them to sum to one
+    """
     values = tuple(float(value) for value in weights)
     if values[0] <= 0 or any(value < 0 for value in values[1:]):
         raise ValueError("Weights must satisfy: first objective > 0 and other objectives >= 0")
     return tuple(float(value) / sum(values) for value in values)
 
 def feedback_schedule(total_episodes: int, num_moments: int, explicit: Iterable[int] | None = None) -> set[int]:
+    """
+    Use explicit feedback episodes or spread moments evenly through training
+    """
     if explicit is not None:
         return {int(episode) for episode in explicit}
     if num_moments <= 0:
@@ -55,6 +73,9 @@ def feedback_schedule(total_episodes: int, num_moments: int, explicit: Iterable[
     return {index * step for index in range(1, num_moments + 1)}
 
 def stage_ratio_map(feedback_number: int) -> dict[str, float]:
+    """
+    Return diminishing feedback multipliers for the current checkpoint
+    """
     if feedback_number <= 1:
         return {"small": 5.0, "big": 10.0, "huge": 25.0}
     if feedback_number == 2:
@@ -64,6 +85,9 @@ def stage_ratio_map(feedback_number: int) -> dict[str, float]:
 def apply_preference_update(
     current_weights: Iterable[float], direction: str, objective: int, strength: str, feedback_number: int
 ) -> tuple[tuple[float, ...], str]:
+    """
+    Increase one objective by the chosen ratio and renormalize all weights
+    """
     obj_weights = normalize_weights(current_weights)
     if direction == "keep":
         return (obj_weights), "Keeping current weights."
@@ -76,6 +100,7 @@ def apply_preference_update(
     message = f"Prioritizing {direction} more ({strength}, ratio x{multiplier:g})."
     return normalize_weights(new_weights), message
 
+# NOTE: this might be used later if we want to keep tokens
 # def encode_feedback_token(direction: str, strength: str) -> str:
 #     if direction == "keep":
 #         return "K"
@@ -85,10 +110,16 @@ def apply_preference_update(
 #     raise ValueError(f"Cannot encode feedback choice {direction}/{strength}")
 
 def serialize_weights(weights: Iterable[float]) -> str:
+    """
+    Format objective weights compactly for display and logging
+    """
     values = tuple(weights)
     return "(" + ", ".join(f"{value:.10g}" for value in values) + ")"
 
 def cell_to_pixel(cell, image_shape, shape):
+    """
+    Map a grid-cell center to its coordinates in a rendered frame
+    """
     row, col = cell
     image_height, image_width = image_shape[:2]
     rows, cols = shape

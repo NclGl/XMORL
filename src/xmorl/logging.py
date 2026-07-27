@@ -12,7 +12,14 @@ import wandb
 from xmorl.config import AppConfig
 
 class _Encoder(json.JSONEncoder):
+    """
+    Convert scientific values into representations compatible with JSON
+    """
+
     def default(self, value: Any):
+        """
+        Encode NumPy values and paths before using the standard fallback
+        """
         if isinstance(value, np.ndarray):
             return value.tolist()
         if isinstance(value, np.generic):
@@ -22,7 +29,14 @@ class _Encoder(json.JSONEncoder):
         return super().default(value)
 
 class RunLogger:
+    """
+    Own one run directory and its optional Weights & Biases session
+    """
+
     def __init__(self, config: AppConfig):
+        """
+        Create storage and initialize configured logging backends
+        """
         self.config = config
         timestamp = datetime.now().strftime("%Y%m%d-%H%M%S")
         self.run_name = config.logging.run_name or f"run-{timestamp}"
@@ -38,8 +52,6 @@ class RunLogger:
             self.write_json("run_config.json", config.to_dict())
 
         if config.logging.wandb_enabled and config.logging.wandb_mode != "disabled":
-            # keep W&B's cache/config state with this run
-            # this avoids hidden writes to a user's profile and makes offline runs self-contained
             wandb_state_dir = self.run_dir.parent / ".wandb-state"
             wandb_cache_dir = wandb_state_dir / "cache"
             wandb_config_dir = wandb_state_dir / "config"
@@ -60,19 +72,31 @@ class RunLogger:
             )
 
     def log(self, metrics: dict, step: int | None = None) -> None:
+        """
+        Send metrics to the active Weights & Biases run
+        """
         if self._wandb_run is not None:
             self._wandb_run.log(metrics, step=step)
 
     def log_feedback(self, event: dict) -> None:
+        """
+        Buffer a feedback event for callers that use incremental collection
+        """
         self._feedback_rows.append(event)
 
     def write_json(self, filename: str, payload: Any) -> Path:
+        """
+        Write a JSON artifact inside the current run directory
+        """
         path = self.run_dir / filename
         with path.open("w", encoding="utf-8") as handle:
             json.dump(payload, handle, cls=_Encoder, indent=2)
         return path
 
     def write_csv(self, filename: str, rows: list[dict]) -> Path | None:
+        """
+        Write tabular rows when at least one row is available
+        """
         if not rows:
             return None
         path = self.run_dir / filename
@@ -84,6 +108,9 @@ class RunLogger:
         return path
 
     def save_results(self, result, evaluation_summary: dict) -> None:
+        """
+        Save legacy feedback, evaluation, and learning artifacts when enabled
+        """
         if self.config.logging.legacy_files:
             self.write_json("feedback_history.json", result.feedback_history)
             self.write_csv("feedback_log.csv", result.feedback_history)
@@ -99,11 +126,20 @@ class RunLogger:
             self.write_csv("learning_returns.csv", learning_rows)
 
     def finish(self) -> None:
+        """
+        Finish the active external logging session
+        """
         if self._wandb_run is not None:
             self._wandb_run.finish()
 
     def __enter__(self):
+        """
+        Return this logger as a managed experiment resource
+        """
         return self
 
     def __exit__(self, exc_type, exc_value, traceback):
+        """
+        Close logging when the experiment context exits
+        """
         self.finish()

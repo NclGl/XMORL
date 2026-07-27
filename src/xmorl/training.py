@@ -22,12 +22,20 @@ State = tuple[int | float, ...]
 
 @dataclass
 class TabularModel:
+    """
+    (Q-learning with P values)
+    Store utility, success, and visit estimates for each state-action pair
+    """
+
     num_actions: int
     q: dict[State, np.ndarray] = field(default_factory=dict)
     p: dict[State, np.ndarray] = field(default_factory=dict)
     visits: dict[State, np.ndarray] = field(default_factory=dict)
 
     def values(self, state: State) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
+        """
+        Return a state's tables, creating entries when unseen
+        """
         if state not in self.q:
             self.q[state] = np.zeros(self.num_actions, dtype=np.float64)
             self.p[state] = np.zeros(self.num_actions, dtype=np.float64)
@@ -36,12 +44,20 @@ class TabularModel:
 
 @dataclass
 class FeedbackChoice:
+    """
+    Represent one human choice about the current objective weights
+    """
+
     direction: str = "keep"
     objective: int = -1
     strength: str = "small"
 
 @dataclass
 class TrainingCheckpoint:
+    """
+    Expose the current policy and weights to a feedback provider
+    """
+
     episode: int
     feedback_number: int
     model: TabularModel
@@ -49,6 +65,10 @@ class TrainingCheckpoint:
 
 @dataclass
 class TrainingResult:
+    """
+    Collect the learned model and histories needed for analysis
+    """
+
     model: TabularModel
     scalar_returns: np.ndarray
     vector_returns: np.ndarray
@@ -58,14 +78,25 @@ class TrainingResult:
     feedback_history: list[dict]
 
 class MetricLogger(Protocol):
-    def log(self, metrics: dict, step: int | None = None) -> None: ...
+    def log(self, metrics: dict, step: int | None = None) -> None:
+        """
+        Log metrics for later analysis
+        """
+        ...
 
 FeedbackProvider = Callable[[TrainingCheckpoint], FeedbackChoice]
 
 def _preference_metric_key(index: int) -> str:
+    """
+    Return the stable metric name for one objective weight
+    """
     return f"preferences/objective_{index + 1}"
 
 def q_p_correlations(model: TabularModel, min_visits: int = 1) -> tuple[float, float]:
+    """
+    Compare learned utility and success estimates over visited actions
+    (intuitively, this tells how useful the success signal is for learning the utility function)
+    """
     pairs = []
     for state in model.q:
         mask = model.visits[state] >= min_visits
@@ -82,6 +113,9 @@ def q_p_correlations(model: TabularModel, min_visits: int = 1) -> tuple[float, f
     return pearson, spearman
 
 def _average_ranks(values: np.ndarray) -> np.ndarray:
+    """
+    Assign average ranks while preserving tied values
+    """
     order = np.argsort(values, kind="mergesort")
     ranks = np.empty(len(values), dtype=np.float64)
     index = 0
@@ -98,6 +132,9 @@ def train(
     logger: MetricLogger,
     feedback_provider: FeedbackProvider | None = None,
 ) -> TrainingResult:
+    """
+    Learn with epsilon-greedy Q-learning and apply feedback at checkpoints
+    """
     settings = config.training
     weights = normalize_weights(settings.utility_weights)
     set_global_seed(settings.seed)

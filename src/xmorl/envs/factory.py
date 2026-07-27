@@ -8,6 +8,9 @@ import mo_gymnasium as mo_gym
 from xmorl.config import EnvironmentConfig
 
 def make_env(config: EnvironmentConfig, render_mode: str | None = None, **overrides: Any):
+    """
+    Create a multi-objective environment with configured and temporary options
+    """
     import xmorl.envs # noqa: F401 - registration side effect
 
     kwargs = dict(config.kwargs)
@@ -28,6 +31,9 @@ def make_env(config: EnvironmentConfig, render_mode: str | None = None, **overri
     return env
 
 def without_explosions(config: EnvironmentConfig) -> EnvironmentConfig:
+    """
+    Copy an environment configuration with bomb termination disabled
+    """
     kwargs = dict(config.kwargs)
     if "bomb_explosion_prob" in kwargs or config.id.startswith("stochastic-deep-sea-treasure"):
         kwargs["bomb_explosion_prob"] = 0.0
