@@ -8,7 +8,7 @@ import mo_gymnasium as mo_gym
 from xmorl.config import EnvironmentConfig
 
 def make_env(config: EnvironmentConfig, render_mode: str | None = None, **overrides: Any):
-    import xmorl.envs  # noqa: F401 - registration side effect
+    import xmorl.envs # noqa: F401 - registration side effect
 
     kwargs = dict(config.kwargs)
     kwargs.update(overrides)

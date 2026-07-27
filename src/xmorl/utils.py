@@ -87,3 +87,16 @@ def apply_preference_update(
 def serialize_weights(weights: Iterable[float]) -> str:
     values = tuple(weights)
     return "(" + ", ".join(f"{value:.10g}" for value in values) + ")"
+
+def cell_to_pixel(cell, image_shape, shape):
+    row, col = cell
+    image_height, image_width = image_shape[:2]
+    rows, cols = shape
+
+    cell_width = image_width / cols
+    cell_height = image_height / rows
+
+    x = (col + 0.5) * cell_width
+    y = (row + 0.5) * cell_height
+
+    return x, y

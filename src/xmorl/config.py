@@ -73,8 +73,10 @@ class PlottingConfig:
     moving_average_window: int = 50
 
 @dataclass
-class LongExplanationConfig:
-    enabled: bool = False
+class GUIConfig:
+    enabled: bool = True
+    long_explanation: bool = True
+    trajectory_line: bool = True
 
 @dataclass
 class AppConfig:
@@ -84,7 +86,7 @@ class AppConfig:
     evaluation: EvaluationConfig = field(default_factory=EvaluationConfig)
     logging: LoggingConfig = field(default_factory=LoggingConfig)
     plotting: PlottingConfig = field(default_factory=PlottingConfig)
-    long_explanation: LongExplanationConfig = field(default_factory=LongExplanationConfig)
+    gui: GUIConfig = field(default_factory=GUIConfig)
 
     def to_dict(self) -> dict[str, Any]:
         return asdict(self)
@@ -109,7 +111,7 @@ def load_config(path: str | Path) -> AppConfig:
     if not isinstance(raw, Mapping):
         raise ValueError("The YAML document must contain a mapping at its root")
 
-    known_sections = {"environment", "training", "feedback", "evaluation", "logging", "plotting", "long_explanation"}
+    known_sections = {"environment", "training", "feedback", "evaluation", "logging", "plotting", "gui"}
     unknown_sections = set(raw) - known_sections
     if unknown_sections:
         raise ValueError(f"Unknown configuration section(s): {', '.join(sorted(unknown_sections))}")
@@ -120,6 +122,7 @@ def load_config(path: str | Path) -> AppConfig:
     evaluation = _section(raw, "evaluation")
     logging = _section(raw, "logging")
     plotting = _section(raw, "plotting")
+    gui = _section(raw, "gui")
     long_explanation = _section(raw, "long_explanation")
 
     for name, values, cls in (
@@ -129,7 +132,7 @@ def load_config(path: str | Path) -> AppConfig:
         ("evaluation", evaluation, EvaluationConfig),
         ("logging", logging, LoggingConfig),
         ("plotting", plotting, PlottingConfig),
-        ("long_explanation", long_explanation, LongExplanationConfig),
+        ("gui", gui, GUIConfig),
     ):
         _reject_unknown(name, values, cls)
 
@@ -162,7 +165,7 @@ def load_config(path: str | Path) -> AppConfig:
         evaluation=EvaluationConfig(**evaluation),
         logging=LoggingConfig(**logging),
         plotting=PlottingConfig(**plotting),
-        long_explanation=LongExplanationConfig(**long_explanation),
+        gui=GUIConfig(**gui),
     )
     validate_config(config)
     return config

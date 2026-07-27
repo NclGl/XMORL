@@ -55,7 +55,8 @@ class InteractiveFeedback:
             gamma_q=self.config.training.gamma_q,
             preview_samples=self.config.feedback.preview_samples,
             feedback_number=checkpoint.feedback_number,
-            long_explanation=self.config.long_explanation,
+            long_explanation=self.config.gui.long_explanation,
+            trajectory_line=self.config.gui.trajectory_line,
         )
         return viewer.run()
 
@@ -116,6 +117,8 @@ def run_experiment(config: AppConfig):
             model=result.model,
             gamma_q=config.training.gamma_q,
             preview_samples=config.feedback.preview_samples,
+            long_explanation=config.gui.long_explanation,
+            trajectory_line=config.gui.trajectory_line,
         ).run()
         print(f"Run complete. Outputs: {logger.run_dir}")
         return result

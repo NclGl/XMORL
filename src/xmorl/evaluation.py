@@ -110,9 +110,11 @@ def build_replay(
     try:
         observation, _ = reset_env_with_seed(env, episode.seed)
         state = obs_to_state(observation)
+        frames = []
         for index, action in enumerate(episode.actions):
             q_values, p_values, _ = model.values(state)
             frame = np.asarray(env.render())
+            frames.append(frame)
             next_observation, reward, terminated, truncated, info = env.step(action)
             reward = np.asarray(reward, dtype=np.float64)
             utility = linear_utility(reward, weights)

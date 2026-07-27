@@ -131,9 +131,13 @@ class ReplayViewer:
         preview_samples: int,
         feedback_number: int | None = None,
         long_explanation: bool = True,
+        trajectory_line: bool = True,
     ):
         self.entries = replay.get("entries", []) if replay else []
         self.replay_seed = replay.get("seed", 0) if replay else 0
+        self.trajectory = [entry.get("state") for entry in self.entries]
+        adapter = environment_adapter(environment.adapter)
+        # self.env_shape = adapter.get_shape(make_env(environment))
         self.current_weights = current_weights
         self.action_names = action_names
         self.environment = environment
@@ -142,6 +146,7 @@ class ReplayViewer:
         self.preview_samples = preview_samples
         self.feedback_number = feedback_number
         self.long_explanation = long_explanation
+        self.trajectory_line = trajectory_line
         self.allow_feedback = feedback_number is not None
         self.index = 0
         self.result = FeedbackChoice()
@@ -338,6 +343,14 @@ class ReplayViewer:
             self.back.state(["disabled"])
             self.forward.state(["disabled"])
             return
+        # TODO: implement trajectory overlay
+        background = self.entries[-1]["frame"]
+        env_shape = getattr(self.environment, "grid_shape", None)
+        # print(f"background shape: {background.shape}")
+        # points = [
+        #     cell_to_pixel(cell, background.shape, self.trajectory) for cell in self.trajectory
+        # ]
+
         entry = self.entries[self.index]
         image = Image.fromarray(entry["frame"])
         scale = min(1.0, 760 / image.width, 700 / image.height)

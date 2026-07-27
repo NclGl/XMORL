@@ -17,7 +17,7 @@ environment:
 
 training:
   seed: 0
-  num_episodes: 500000
+  num_episodes: 50000
   utility_weights: [1, 1, 1]
   alpha_q: 0.3
   gamma_q: 0.99
@@ -49,7 +49,7 @@ logging:
   wandb_enabled: true
   wandb_mode: offline
   wandb_project: xmorl
-  wandb_entity: null
+  wandb_entity: nicolas-gil-vrije-universiteit-brussel
   log_every: 5000
 
 plotting:
@@ -57,6 +57,7 @@ plotting:
   show: true
   moving_average_window: 50
 
-#TODO: change to something like utils if more preferences 
-long_explanation:
-  enabled: false
+gui:
+  enabled: true
+  long_explanation: true
+  trajectory_line: true
