@@ -24,12 +24,19 @@ from xmorl.utils import (
 def _format_probability(value: float) -> str:
     """
     Format a probability as a percentage for the action table
+
+    :param value: Probability value
+    :return: Percentage text
     """
     return f"{100 * float(value):.1f}%"
 
 def _relative_preview_score(q_values: np.ndarray, stochasticity: float) -> np.ndarray:
     """
     Normalize preview utilities and blend in environmental uncertainty
+
+    :param q_values: One-step utility estimates by action
+    :param stochasticity: Uniform uncertainty factor
+    :return: Relative preview scores by action
     """
     if q_values.size == 0:
         return q_values.copy()
@@ -52,6 +59,14 @@ def build_decision_explanation(
 ) -> str:
     """
     Explain the selected action through utility, success, and objective effects
+
+    :param entry: Replay step data
+    :param success_probabilities: Estimated success by action
+    :param weights: Current objective weights
+    :param action_names: Display names by action
+    :param objective_names: Display names by objective
+    :param long_explanation: Whether to include immediate objective effects
+    :return: Decision explanation
     """
     action = entry["action"]
     if action is None:
@@ -106,6 +121,16 @@ def estimate_state_preview(
 ) -> np.ndarray:
     """
     Estimate each action after one sampled step from a recorded state
+
+    :param environment: Environment configuration
+    :param model: Learned policy model
+    :param state: Recorded tabular state
+    :param weights: Objective weights to preview
+    :param gamma_q: Utility discount factor
+    :param seed: Base preview seed
+    :param samples: Samples per action
+    :param fallback: Stored estimates for unsupported environments
+    :return: Relative action preview scores
     """
     adapter = environment_adapter(environment.adapter)
     if not adapter.supports_state_preview:
@@ -151,6 +176,20 @@ class ReplayViewer:
     ):
         """
         Prepare replay state, cached visuals, and the interactive window
+
+        :param title: Window title
+        :param replay: Rendered replay data
+        :param summary: Evaluation summary text
+        :param current_weights: Current objective weights
+        :param action_names: Display names by action
+        :param environment: Environment configuration
+        :param model: Learned policy model
+        :param gamma_q: Utility discount factor
+        :param preview_samples: Samples per preview action
+        :param feedback_number: Feedback checkpoint or None for view-only mode
+        :param long_explanation: Whether explanations include objective effects
+        :param trajectory_line: Whether frames include the visited path
+        :return: None
         """
         self.entries = replay.get("entries", []) if replay else []
         self.replay_seed = replay.get("seed", 0) if replay else 0
@@ -201,6 +240,9 @@ class ReplayViewer:
     def _build(self, summary: str) -> None:
         """
         Build replay, explanation, action, navigation, and feedback controls
+
+        :param summary: Evaluation summary text
+        :return: None
         """
         main = ttk.Frame(self.root, padding=12)
         main.pack(fill="both", expand=True)
@@ -323,18 +365,27 @@ class ReplayViewer:
     def _update_right_scroll_region(self, _event=None) -> None:
         """
         Keep the scrollable region aligned with the right panel's contents
+
+        :param _event: Optional Tkinter configure event
+        :return: None
         """
         self.right_canvas.configure(scrollregion=self.right_canvas.bbox("all"))
 
     def _resize_right_panel(self, event) -> None:
         """
         Match the embedded right panel to the available canvas width
+
+        :param event: Tkinter configure event
+        :return: None
         """
         self.right_canvas.itemconfigure(self._right_window, width=event.width)
 
     def _scroll_right_panel(self, event) -> None:
         """
         Scroll only when the pointer is over the replay's right panel
+
+        :param event: Tkinter mouse-wheel event
+        :return: None
         """
         widget = self.root.winfo_containing(event.x_root, event.y_root)
         while widget is not None:
@@ -348,6 +399,8 @@ class ReplayViewer:
     def _update_columns(self) -> None:
         """
         Show action columns relevant to detail and feedback modes
+
+        :return: None
         """
         columns = ["action"]
         if self.details.get():
@@ -362,6 +415,8 @@ class ReplayViewer:
     def _preference_changed(self) -> None:
         """
         Preview the weights and action scores implied by the current choice
+
+        :return: None
         """
         if self.direction.get() == "keep":
             self.strength_label.grid_remove()
@@ -378,6 +433,10 @@ class ReplayViewer:
     def _objective_changed(self, label: str, index: int) -> None:
         """
         Select an objective and refresh its preference preview
+
+        :param label: Selected objective label
+        :param index: Selected objective index
+        :return: None
         """
         self.direction.set(label)
         self.objective.set(index)
@@ -386,6 +445,10 @@ class ReplayViewer:
     def _preview(self, entry: dict, weights: tuple[float, ...]) -> np.ndarray:
         """
         Return a cached action preview for one replay step and weight vector
+
+        :param entry: Current replay step
+        :param weights: Objective weights to preview
+        :return: Action preview scores
         """
         key = (self.index, weights)
         if key not in self._preview_cache:
@@ -399,6 +462,8 @@ class ReplayViewer:
     def _update_view(self) -> None:
         """
         Render the current step and synchronize its explanation and action table
+
+        :return: None
         """
         if not self.entries:
             self.image_label.configure(text="No successful replay is available.")
@@ -462,6 +527,8 @@ class ReplayViewer:
     def _back(self) -> None:
         """
         Move to the preceding replay state
+
+        :return: None
         """
         self.index = max(0, self.index - 1)
         self._update_view()
@@ -469,6 +536,8 @@ class ReplayViewer:
     def _forward(self) -> None:
         """
         Move to the following replay state
+
+        :return: None
         """
         self.index = min(len(self.entries) - 1, self.index + 1)
         self._update_view()
@@ -476,6 +545,9 @@ class ReplayViewer:
     def _on_left_key(self, _event) -> str:
         """
         Handle keyboard navigation to the preceding state
+
+        :param _event: Tkinter key event
+        :return: Tkinter propagation control value
         """
         self._back()
         return "break"
@@ -483,6 +555,9 @@ class ReplayViewer:
     def _on_right_key(self, _event) -> str:
         """
         Handle keyboard navigation to the following state
+
+        :param _event: Tkinter key event
+        :return: Tkinter propagation control value
         """
         self._forward()
         return "break"
@@ -490,6 +565,8 @@ class ReplayViewer:
     def _confirm(self) -> None:
         """
         Store the selected feedback and close the viewer
+
+        :return: None
         """
         self.result = FeedbackChoice(self.direction.get(), self.objective.get(), self.strength.get())
         self.root.unbind_all("<MouseWheel>")
@@ -500,6 +577,8 @@ class ReplayViewer:
     def _close(self) -> None:
         """
         Close the viewer without changing the default feedback choice
+
+        :return: None
         """
         self.root.unbind_all("<MouseWheel>")
         self.root.unbind_all("<Left>")
@@ -509,6 +588,8 @@ class ReplayViewer:
     def run(self) -> FeedbackChoice:
         """
         Run the GUI until closure and return its feedback choice
+
+        :return: Confirmed or default feedback choice
         """
         self.root.mainloop()
         return self.result

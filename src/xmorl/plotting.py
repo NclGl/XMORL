@@ -8,6 +8,10 @@ import numpy as np
 def moving_average(values: np.ndarray, window: int) -> np.ndarray:
     """
     Smooth a sequence with a valid window arithmetic mean
+
+    :param values: Sequence to smooth
+    :param window: Moving-average window length
+    :return: Smoothed sequence
     """
     values = np.asarray(values, dtype=np.float64)
     if window <= 1 or len(values) < window:
@@ -17,6 +21,12 @@ def moving_average(values: np.ndarray, window: int) -> np.ndarray:
 def plot_learning(result, path: str | Path, window: int = 50, show: bool = True) -> Path:
     """
     Save learning curves and mark episodes where preferences changed
+
+    :param result: Completed training result
+    :param path: Output image path
+    :param window: Moving-average window length
+    :param show: Whether to display the figure interactively
+    :return: Saved image path
     """
     path = Path(path)
     fig, axes = plt.subplots(2, 1, figsize=(11, 8), sharex=True)

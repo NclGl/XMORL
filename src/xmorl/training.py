@@ -35,6 +35,9 @@ class TabularModel:
     def values(self, state: State) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
         """
         Return a state's tables, creating entries when unseen
+
+        :param state: Hashable tabular state
+        :return: Utility, success, and visit arrays
         """
         if state not in self.q:
             self.q[state] = np.zeros(self.num_actions, dtype=np.float64)
@@ -81,6 +84,10 @@ class MetricLogger(Protocol):
     def log(self, metrics: dict, step: int | None = None) -> None:
         """
         Log metrics for later analysis
+
+        :param metrics: Metric names and values
+        :param step: Optional training step
+        :return: None
         """
         ...
 
@@ -89,6 +96,9 @@ FeedbackProvider = Callable[[TrainingCheckpoint], FeedbackChoice]
 def _preference_metric_key(index: int) -> str:
     """
     Return the stable metric name for one objective weight
+
+    :param index: Objective index
+    :return: Preference metric name
     """
     return f"preferences/objective_{index + 1}"
 
@@ -96,6 +106,10 @@ def q_p_correlations(model: TabularModel, min_visits: int = 1) -> tuple[float, f
     """
     Compare learned utility and success estimates over visited actions
     (intuitively, this tells how useful the success signal is for learning the utility function)
+
+    :param model: Learned tabular estimates
+    :param min_visits: Minimum visits required for inclusion
+    :return: Pearson and Spearman correlations
     """
     pairs = []
     for state in model.q:
@@ -115,6 +129,9 @@ def q_p_correlations(model: TabularModel, min_visits: int = 1) -> tuple[float, f
 def _average_ranks(values: np.ndarray) -> np.ndarray:
     """
     Assign average ranks while preserving tied values
+
+    :param values: Values to rank
+    :return: Average rank for each original position
     """
     order = np.argsort(values, kind="mergesort")
     ranks = np.empty(len(values), dtype=np.float64)
@@ -134,6 +151,11 @@ def train(
 ) -> TrainingResult:
     """
     Learn with epsilon-greedy Q-learning and apply feedback at checkpoints
+
+    :param config: Validated experiment configuration
+    :param logger: Training metric sink
+    :param feedback_provider: Optional checkpoint feedback callback
+    :return: Learned model and training histories
     """
     settings = config.training
     weights = normalize_weights(settings.utility_weights)

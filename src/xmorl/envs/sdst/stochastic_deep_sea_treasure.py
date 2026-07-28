@@ -18,12 +18,22 @@ from xmorl.envs.dst.deep_sea_treasure import (
 def constant_in_radius(distance, radius, base_prob):
     """
     Use the same explosion probability throughout a bomb's radius
+
+    :param distance: Manhattan distance from the bomb
+    :param radius: Bomb effect radius
+    :param base_prob: Base explosion probability
+    :return: Explosion probability
     """
     return base_prob
 
 def half_per_distance(distance, radius, base_prob):
     """
     Halve explosion probability for each cell of Manhattan distance
+
+    :param distance: Manhattan distance from the bomb
+    :param radius: Bomb effect radius
+    :param base_prob: Base explosion probability
+    :return: Distance-adjusted explosion probability
     """
     return base_prob * (0.5**distance)
 
@@ -49,6 +59,17 @@ class StochasticDeepSeaTreasure(DeepSeaTreasure):
     ):
         """
         Configure bomb placement, risk, penalty, and episode duration
+
+        :param render_mode: Human or RGB-array rendering mode
+        :param dst_map: Supported treasure map
+        :param float_state: Whether observations use normalized coordinates
+        :param bomb_positions: Static bomb grid positions
+        :param bomb_explosion_prob: Base explosion probability
+        :param bomb_radius: Manhattan effect radius
+        :param bomb_penalty: First-objective explosion penalty
+        :param bomb_explosion_prob_fn: Distance-based probability function
+        :param max_steps: Episode step limit
+        :return: None
         """
         super().__init__(
             render_mode=render_mode,
@@ -100,6 +121,8 @@ class StochasticDeepSeaTreasure(DeepSeaTreasure):
     def _validate_bombs(self):
         """
         Require every configured bomb to occupy a traversable map cell
+
+        :return: None
         """
         for pos in self.bomb_positions:
             if not self._is_in_bounds(np.array(pos, dtype=np.int32)):
@@ -110,6 +133,9 @@ class StochasticDeepSeaTreasure(DeepSeaTreasure):
     def _is_in_bounds(self, state):
         """
         Check coordinates against the active map dimensions
+
+        :param state: Candidate grid state
+        :return: Whether the state lies inside the map
         """
         if self.map_name == "mirrored":
             return 0 <= state[0] <= 10 and 0 <= state[1] <= 19
@@ -118,18 +144,26 @@ class StochasticDeepSeaTreasure(DeepSeaTreasure):
     def _is_bomb(self, state):
         """
         Report whether a bomb is placed at a state
+
+        :param state: Candidate grid state
+        :return: Whether the state contains a bomb
         """
         return tuple(state) in self.bomb_positions
 
     def _bomb_explodes(self):
         """
         Sample the base explosion probability
+
+        :return: Whether an explosion occurs
         """
         return self.np_random.random() < self.bomb_explosion_prob
 
     def _bombs_in_range(self, state):
         """
         Return bombs whose Manhattan radius contains the submarine
+
+        :param state: Submarine grid state
+        :return: Bomb row, column, and distance values
         """
         if not self.bomb_positions:
             return []
@@ -145,6 +179,9 @@ class StochasticDeepSeaTreasure(DeepSeaTreasure):
     def _explosion_overlay(self, center):
         """
         Return in-bounds cells covered by an explosion visualization
+
+        :param center: Exploding bomb position
+        :return: Grid cells covered by the explosion
         """
         cx, cy = center
         cells = set()
@@ -160,6 +197,8 @@ class StochasticDeepSeaTreasure(DeepSeaTreasure):
     def _load_additional_render_assets(self):
         """
         Load and scale bomb and explosion images
+
+        :return: None
         """
         if self.bomb_img is None:
             filename = path.join(path.dirname(__file__), "assets", "bomb.png")
@@ -177,6 +216,8 @@ class StochasticDeepSeaTreasure(DeepSeaTreasure):
     def _draw_before_agent(self):
         """
         Draw bombs behind the submarine
+
+        :return: None
         """
         for bx, by in self.bomb_positions:
             bomb_rect = pygame.Rect(
@@ -190,6 +231,8 @@ class StochasticDeepSeaTreasure(DeepSeaTreasure):
     def _draw_after_agent(self):
         """
         Draw the current explosion over the submarine
+
+        :return: None
         """
         for ex, ey in self.explosion_cells:
             explosion_rect = pygame.Rect(
@@ -203,6 +246,9 @@ class StochasticDeepSeaTreasure(DeepSeaTreasure):
     def set_state_for_preview(self, observation):
         """
         Set a state for GUI one-step previews without resetting dynamics
+
+        :param observation: Recorded submarine state
+        :return: None
         """
         state = np.asarray(observation, dtype=np.float32)
         if self.float_state:
@@ -219,6 +265,10 @@ class StochasticDeepSeaTreasure(DeepSeaTreasure):
     def reset(self, seed=None, **kwargs):
         """
         Clear hazard state and reset the base environment
+
+        :param seed: Optional environment seed
+        :param kwargs: Additional Gymnasium reset options
+        :return: Initial observation and reset information
         """
         self.explosion_cells = set()
         self.step_count = 0
@@ -227,6 +277,9 @@ class StochasticDeepSeaTreasure(DeepSeaTreasure):
     def step(self, action):
         """
         Move once, resolve nearby bomb risk, and return vector reward
+
+        :param action: Discrete movement action
+        :return: Gymnasium transition
         """
         next_state = self.current_state + self.dir[int(action)]
         if self._is_valid_state(next_state):

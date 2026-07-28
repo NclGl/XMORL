@@ -20,6 +20,9 @@ class InteractiveFeedback:
     def __call__(self, checkpoint: TrainingCheckpoint) -> FeedbackChoice:
         """
         Evaluate the policy, show a representative replay, and return feedback
+
+        :param checkpoint: Current training state
+        :return: User preference choice
         """
         settings = self.config.evaluation
         seeds = range(settings.checkpoint_seed_start, settings.checkpoint_seed_start + settings.checkpoint_episodes)
@@ -70,6 +73,9 @@ class InteractiveFeedback:
 def run_experiment(config: AppConfig):
     """
     Run the complete XMORL lifecycle and save its results
+
+    :param config: Validated experiment configuration
+    :return: Completed training result
     """
     with RunLogger(config) as logger:
         feedback = InteractiveFeedback(config, logger) if config.feedback.enabled else None

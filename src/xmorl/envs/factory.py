@@ -10,6 +10,11 @@ from xmorl.config import EnvironmentConfig
 def make_env(config: EnvironmentConfig, render_mode: str | None = None, **overrides: Any):
     """
     Create a multi-objective environment with configured and temporary options
+
+    :param config: Base environment configuration
+    :param render_mode: Optional Gymnasium render mode
+    :param overrides: Temporary environment keyword overrides
+    :return: Configured multi-objective environment
     """
     import xmorl.envs # noqa: F401 - registration side effect
 
@@ -33,6 +38,9 @@ def make_env(config: EnvironmentConfig, render_mode: str | None = None, **overri
 def without_explosions(config: EnvironmentConfig) -> EnvironmentConfig:
     """
     Copy an environment configuration with bomb termination disabled
+
+    :param config: Source environment configuration
+    :return: Configuration with explosion probability set to zero
     """
     kwargs = dict(config.kwargs)
     if "bomb_explosion_prob" in kwargs or config.id.startswith("stochastic-deep-sea-treasure"):

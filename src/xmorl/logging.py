@@ -19,6 +19,9 @@ class _Encoder(json.JSONEncoder):
     def default(self, value: Any):
         """
         Encode NumPy values and paths before using the standard fallback
+
+        :param value: Value to encode
+        :return: JSON-compatible value
         """
         if isinstance(value, np.ndarray):
             return value.tolist()
@@ -36,6 +39,9 @@ class RunLogger:
     def __init__(self, config: AppConfig):
         """
         Create storage and initialize configured logging backends
+
+        :param config: Experiment and logging configuration
+        :return: None
         """
         self.config = config
         timestamp = datetime.now().strftime("%Y%m%d-%H%M%S")
@@ -74,6 +80,10 @@ class RunLogger:
     def log(self, metrics: dict, step: int | None = None) -> None:
         """
         Send metrics to the active Weights & Biases run
+
+        :param metrics: Metric names and values
+        :param step: Optional training step
+        :return: None
         """
         if self._wandb_run is not None:
             self._wandb_run.log(metrics, step=step)
@@ -81,12 +91,19 @@ class RunLogger:
     def log_feedback(self, event: dict) -> None:
         """
         Buffer a feedback event for callers that use incremental collection
+
+        :param event: Feedback event values
+        :return: None
         """
         self._feedback_rows.append(event)
 
     def write_json(self, filename: str, payload: Any) -> Path:
         """
         Write a JSON artifact inside the current run directory
+
+        :param filename: Artifact filename
+        :param payload: JSON-serializable content
+        :return: Written artifact path
         """
         path = self.run_dir / filename
         with path.open("w", encoding="utf-8") as handle:
@@ -96,6 +113,10 @@ class RunLogger:
     def write_csv(self, filename: str, rows: list[dict]) -> Path | None:
         """
         Write tabular rows when at least one row is available
+
+        :param filename: Artifact filename
+        :param rows: Records to write
+        :return: Written path or None when rows are empty
         """
         if not rows:
             return None
@@ -110,6 +131,10 @@ class RunLogger:
     def save_results(self, result, evaluation_summary: dict) -> None:
         """
         Save legacy feedback, evaluation, and learning artifacts when enabled
+
+        :param result: Completed training result
+        :param evaluation_summary: Final evaluation metrics
+        :return: None
         """
         if self.config.logging.legacy_files:
             self.write_json("feedback_history.json", result.feedback_history)
@@ -128,6 +153,8 @@ class RunLogger:
     def finish(self) -> None:
         """
         Finish the active external logging session
+
+        :return: None
         """
         if self._wandb_run is not None:
             self._wandb_run.finish()
@@ -135,11 +162,18 @@ class RunLogger:
     def __enter__(self):
         """
         Return this logger as a managed experiment resource
+
+        :return: Active logger
         """
         return self
 
     def __exit__(self, exc_type, exc_value, traceback):
         """
         Close logging when the experiment context exits
+
+        :param exc_type: Raised exception type
+        :param exc_value: Raised exception instance
+        :param traceback: Raised exception traceback
+        :return: None
         """
         self.finish()

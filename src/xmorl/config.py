@@ -127,12 +127,18 @@ class AppConfig:
     def to_dict(self) -> dict[str, Any]:
         """
         Return a serialization-ready view of the full configuration
+
+        :return: Nested configuration values
         """
         return asdict(self)
 
 def _section(data: Mapping[str, Any], name: str) -> dict[str, Any]:
     """
     Read one YAML section
+
+    :param data: Root configuration mapping
+    :param name: Section name
+    :return: Mutable section values
     """
     value = data.get(name, {})
     if not isinstance(value, Mapping):
@@ -142,6 +148,11 @@ def _section(data: Mapping[str, Any], name: str) -> dict[str, Any]:
 def _reject_unknown(section: str, values: Mapping[str, Any], cls: type) -> None:
     """
     Reject configuration keys that are not fields of the target dataclass
+
+    :param section: Section name used in errors
+    :param values: Options to validate
+    :param cls: Dataclass that defines allowed options
+    :return: None
     """
     allowed = set(cls.__dataclass_fields__)
     unknown = set(values) - allowed
@@ -152,6 +163,9 @@ def _reject_unknown(section: str, values: Mapping[str, Any], cls: type) -> None:
 def load_config(path: str | Path) -> AppConfig:
     """
     Load YAML, normalize collection types, and return a validated configuration
+
+    :param path: YAML configuration path
+    :return: Validated experiment configuration
     """
     config_path = Path(path)
     with config_path.open("r", encoding="utf-8") as handle:
@@ -171,7 +185,6 @@ def load_config(path: str | Path) -> AppConfig:
     logging = _section(raw, "logging")
     plotting = _section(raw, "plotting")
     gui = _section(raw, "gui")
-    long_explanation = _section(raw, "long_explanation")
 
     for name, values, cls in (
         ("environment", env, EnvironmentConfig),
@@ -221,6 +234,9 @@ def load_config(path: str | Path) -> AppConfig:
 def validate_config(config: AppConfig) -> None:
     """
     Reject settings that would make training or interpretation inconsistent
+
+    :param config: Experiment configuration to validate
+    :return: None
     """
     from xmorl.environment_adapters import environment_adapter_names
 

@@ -42,6 +42,13 @@ def rollout(
 ) -> EpisodeResult:
     """
     Run the current greedy policy once without updating the model
+
+    :param environment: Environment configuration
+    :param model: Unchanged policy model
+    :param weights: Current objective weights
+    :param seed: Rollout seed
+    :param max_steps: Maximum rollout length
+    :return: Recorded greedy rollout
     """
     env = make_env(environment)
     try:
@@ -81,6 +88,13 @@ def evaluate(
 ) -> tuple[list[EpisodeResult], dict]:
     """
     Evaluate fixed seeds and summarize return, success, and failure rates
+
+    :param environment: Environment configuration
+    :param model: Unchanged policy model
+    :param weights: Current objective weights
+    :param seeds: Evaluation seeds
+    :param max_steps: Maximum steps per rollout
+    :return: Rollouts and aggregate metrics
     """
     results = [rollout(environment, model, weights, int(seed), max_steps) for seed in seeds]
     if not results:
@@ -103,6 +117,10 @@ def evaluate(
 def representative_episode(results: list[EpisodeResult], successful_only: bool = True) -> EpisodeResult | None:
     """
     Select the episode nearest the candidates' mean return, then mean length
+
+    :param results: Evaluation rollouts
+    :param successful_only: Whether to exclude unsuccessful rollouts
+    :return: Representative candidate when available
     """
     candidates = [item for item in results if item.success] if successful_only else list(results)
     if not candidates:
@@ -114,6 +132,10 @@ def representative_episode(results: list[EpisodeResult], successful_only: bool =
 def best_episode(results: list[EpisodeResult], successful_only: bool = True) -> EpisodeResult | None:
     """
     Select the candidate with the highest scalar utility return
+
+    :param results: Evaluation rollouts
+    :param successful_only: Whether to exclude unsuccessful rollouts
+    :return: Highest return candidate when available
     """
     candidates = [item for item in results if item.success] if successful_only else list(results)
     return max(candidates, key=lambda item: item.scalar_return) if candidates else None
@@ -127,6 +149,13 @@ def build_replay(
 ) -> dict:
     """
     Replay recorded actions and capture frames and decision data for the GUI
+
+    :param environment: Environment configuration
+    :param model: Policy model used for decision data
+    :param weights: Current objective weights
+    :param episode: Episode whose actions are replayed
+    :param disable_explosions: Whether replay bomb termination is disabled
+    :return: GUI replay seed and entries
     """
     replay_config = without_explosions(environment) if disable_explosions else environment
     env = make_env(replay_config, render_mode="rgb_array")
@@ -177,6 +206,10 @@ def build_replay(
 def format_summary(summary: dict, weights: tuple[float, ...]) -> str:
     """
     Format evaluation metrics and current preferences for the replay viewer
+
+    :param summary: Aggregate evaluation metrics
+    :param weights: Current objective weights
+    :return: Evaluation summary
     """
     return "\n".join((
         f"Current weights: {weights}",

@@ -14,6 +14,13 @@ def success_value(
 ) -> float:
     """
     Resolve success through info, an adapter, or the configured fallback rule
+
+    :param reward: Objective reward vector
+    :param terminated: Whether the environment reached a terminal state
+    :param truncated: Whether the episode ended by a limit
+    :param info: Environment transition metadata
+    :param environment: Optional success configuration
+    :return: Binary success value
     """
     if "success" in info:
         return float(bool(info["success"]))
@@ -45,6 +52,11 @@ def success_value(
 def _automatic_success(reward: np.ndarray, terminated: bool, truncated: bool) -> float:
     """
     Treat the first reward value as a success indicator if the episode terminated normally
+
+    :param reward: Objective reward vector
+    :param terminated: Whether the environment reached a terminal state
+    :param truncated: Whether the episode ended by a limit
+    :return: Binary success value
     """
     if truncated or not terminated:
         return 0.0
