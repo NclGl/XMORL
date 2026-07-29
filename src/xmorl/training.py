@@ -1,6 +1,8 @@
 from __future__ import annotations
 
+from copy import deepcopy
 from dataclasses import dataclass, field
+import random
 from typing import Callable, Iterable, Protocol
 
 import numpy as np
@@ -80,6 +82,25 @@ class TrainingResult:
     correlation_history: list[dict]
     feedback_history: list[dict]
 
+@dataclass
+class TrainingSnapshot:
+    """
+    Preserve training state immediately before feedback is collected
+    """
+
+    episode: int
+    feedback_number: int
+    model: TabularModel
+    weights: tuple[float, ...]
+    epsilon: float
+    scalar_returns: list[float]
+    vector_returns: list[np.ndarray]
+    weight_history: list[dict]
+    correlation_history: list[dict]
+    feedback_history: list[dict]
+    numpy_random_state: tuple
+    python_random_state: object
+
 class MetricLogger(Protocol):
     def log(self, metrics: dict, step: int | None = None) -> None:
         """
@@ -93,6 +114,7 @@ class MetricLogger(Protocol):
 
 FeedbackProvider = Callable[[TrainingCheckpoint], FeedbackChoice]
 FeedbackEpisodeProvider = Callable[[int], Iterable[int]]
+StepbackProvider = Callable[[], Iterable[int]]
 
 def _preference_metric_key(index: int) -> str:
     """
@@ -150,6 +172,7 @@ def train(
     logger: MetricLogger,
     feedback_provider: FeedbackProvider | None = None,
     feedback_episode_provider: FeedbackEpisodeProvider | None = None,
+    stepback_provider: StepbackProvider | None = None,
 ) -> TrainingResult:
     """
     Learn with epsilon-greedy Q-learning and apply feedback at checkpoints
@@ -158,6 +181,7 @@ def train(
     :param logger: Training metric sink
     :param feedback_provider: Optional checkpoint feedback callback
     :param feedback_episode_provider: Optional source of future feedback episodes
+    :param stepback_provider: Optional source of feedback episodes to restore
     :return: Learned model and training histories
     """
     settings = config.training
@@ -180,10 +204,12 @@ def train(
     weight_history = [{"episode": 1, "weights": weights}]
     feedback_history: list[dict] = []
     correlation_history: list[dict] = []
+    snapshots: dict[int, TrainingSnapshot] = {}
     feedback_number = 0
 
+    episode = 1
     try:
-        for episode in range(1, settings.num_episodes + 1):
+        while episode <= settings.num_episodes:
             observation, _ = reset_env_with_seed(env, settings.seed + episode)
             state = obs_to_state(observation)
             done = False
@@ -249,7 +275,57 @@ def train(
             if feedback_episode_provider is not None:
                 schedule.update(feedback_episode_provider(episode))
 
+            stepback_episode = None
+            if stepback_provider is not None:
+                for requested_episode in stepback_provider():
+                    if requested_episode >= episode:
+                        print(
+                            f"[training.py] Rejected stepback to episode {requested_episode}: "
+                            f"training is at episode {episode}"
+                        )
+                    elif requested_episode not in snapshots:
+                        available = ", ".join(str(value) for value in sorted(snapshots)) or "none"
+                        print(
+                            f"[training.py] Rejected stepback to episode {requested_episode}: "
+                            f"available feedback episodes: {available}"
+                        )
+                    else:
+                        stepback_episode = requested_episode
+
+            if stepback_episode is not None:
+                snapshot = snapshots[stepback_episode]
+                model = deepcopy(snapshot.model)
+                weights = snapshot.weights
+                epsilon = snapshot.epsilon
+                scalar_returns = snapshot.scalar_returns.copy()
+                vector_returns = [value.copy() for value in snapshot.vector_returns]
+                weight_history = deepcopy(snapshot.weight_history)
+                correlation_history = deepcopy(snapshot.correlation_history)
+                feedback_history = deepcopy(snapshot.feedback_history)
+                feedback_number = snapshot.feedback_number
+                np.random.set_state(deepcopy(snapshot.numpy_random_state))
+                random.setstate(snapshot.python_random_state)
+                for saved_episode in tuple(snapshots):
+                    if saved_episode >= stepback_episode:
+                        del snapshots[saved_episode]
+                episode = stepback_episode
+                print(f"[training.py] Stepped back to feedback episode {stepback_episode}")
+
             if episode in schedule and feedback_provider is not None:
+                snapshots[episode] = TrainingSnapshot(
+                    episode=episode,
+                    feedback_number=feedback_number,
+                    model=deepcopy(model),
+                    weights=weights,
+                    epsilon=epsilon,
+                    scalar_returns=scalar_returns.copy(),
+                    vector_returns=[value.copy() for value in vector_returns],
+                    weight_history=deepcopy(weight_history),
+                    correlation_history=deepcopy(correlation_history),
+                    feedback_history=deepcopy(feedback_history),
+                    numpy_random_state=deepcopy(np.random.get_state()),
+                    python_random_state=random.getstate(),
+                )
                 feedback_number += 1
                 choice = feedback_provider(
                     TrainingCheckpoint(episode, feedback_number, model, weights)
@@ -292,6 +368,7 @@ def train(
                     f"Episode {episode}/{settings.num_episodes} | "
                     f"mean return {np.mean(recent):.3f} | epsilon {epsilon:.3f} | weights {weights}"
                 )
+            episode += 1
     finally:
         env.close()
 

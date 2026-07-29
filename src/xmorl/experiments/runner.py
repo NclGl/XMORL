@@ -28,6 +28,7 @@ class CLIFeedbackScheduler:
         self.total_episodes = total_episodes
         self._scheduled = set(scheduled)
         self._requests: Queue[int] = Queue()
+        self._stepbacks: Queue[int] = Queue()
         self._stopped = Event()
         self._thread: Thread | None = None
 
@@ -37,7 +38,10 @@ class CLIFeedbackScheduler:
 
         :return: None
         """
-        print("Runtime feedback scheduling is active. Enter a future episode number and press Enter.")
+        print(
+            "Runtime feedback scheduling is active. Enter a future episode number,"
+            "or 'stepback' followed by the feedback episode number, and press Enter."
+        )
         self._thread = Thread(target=self._read, name="xmorl-feedback-input", daemon=True)
         self._thread.start()
 
@@ -51,15 +55,28 @@ class CLIFeedbackScheduler:
 
     def submit(self, value: str) -> None:
         """
-        Parse and queue one episode entered through the CLI
+        Parse and queue one command entered through the CLI
 
         :param value: Raw CLI input
         :return: None
         """
+        parts = value.strip().split()
+        if parts and parts[0].lower() == "stepback":
+            if len(parts) != 2:
+                print("[runner.py] Rejected stepback: use 'stepback' followed by the feedback episode number")
+                return
+            try:
+                self._stepbacks.put(int(parts[1]))
+            except ValueError:
+                print("[runner.py] Rejected stepback: feedback episode must be an integer")
+            return
         try:
             episode = int(value.strip())
         except ValueError:
-            print(f"[feedback scheduler] Rejected {value!r}: enter an integer episode")
+            print(
+                f"[runner.py] Rejected {value!r}: enter an integer episode "
+                "or 'stepback' followed by the feedback episode number"
+            )
             return
         self._requests.put(episode)
 
@@ -78,21 +95,34 @@ class CLIFeedbackScheduler:
                 break
             if episode <= current_episode:
                 print(
-                    f"[feedback scheduler] Rejected episode {episode}: "
+                    f"[runner.py] Rejected episode {episode}: "
                     f"training is already at episode {current_episode}"
                 )
             elif episode > self.total_episodes:
                 print(
-                    f"[feedback scheduler] Rejected episode {episode}: "
+                    f"[runner.py] Rejected episode {episode}: "
                     f"training ends at episode {self.total_episodes}"
                 )
             elif episode in self._scheduled:
-                print(f"[feedback scheduler] Ignored episode {episode}: feedback is already scheduled")
+                print(f"[runner.py] Ignored episode {episode}: feedback is already scheduled")
             else:
                 self._scheduled.add(episode)
                 accepted.add(episode)
-                print(f"[feedback scheduler] Added feedback at episode {episode}")
+                print(f"[runner.py] Added feedback at episode {episode}")
         return accepted
+
+    def poll_stepbacks(self) -> list[int]:
+        """
+        Return queued feedback episodes requested as rollback targets
+
+        :return: Requested feedback episodes
+        """
+        requested = []
+        while True:
+            try:
+                requested.append(self._stepbacks.get_nowait())
+            except Empty:
+                return requested
 
     def _read(self) -> None:
         """
@@ -195,6 +225,7 @@ def run_experiment(config: AppConfig, cli_feedback: bool = True):
                 logger,
                 feedback_provider=feedback,
                 feedback_episode_provider=scheduler.poll if scheduler is not None else None,
+                stepback_provider=scheduler.poll_stepbacks if scheduler is not None else None,
             )
         finally:
             if scheduler is not None:

@@ -73,10 +73,50 @@ def test_cli_feedback_scheduler_rejects_nonfuture_and_invalid_episodes(capsys):
     scheduler.submit("11")
     scheduler.submit("not-an-episode")
     scheduler.submit("8")
+    scheduler.submit("stepback 3")
+    scheduler.submit("stepback not-an-episode")
 
     assert scheduler.poll(current_episode=5) == {8}
+    assert scheduler.poll_stepbacks() == [3]
     output = capsys.readouterr().out
     assert "Rejected episode 5" in output
     assert "already scheduled" in output
     assert "training ends at episode 10" in output
     assert "enter an integer episode" in output
+    assert "feedback episode must be an integer" in output
+
+def test_training_steps_back_to_before_previous_feedback():
+    config = load_config("configs/sdst.yaml")
+    config = replace(
+        config,
+        training=replace(config.training, num_episodes=5, progress_every=0),
+        feedback=replace(config.feedback, enabled=True, episodes=(2, 4)),
+        logging=replace(config.logging, log_every=2, wandb_enabled=False),
+    )
+    checkpoints = []
+    stepped_back = False
+
+    def feedback_provider(checkpoint):
+        checkpoints.append((checkpoint.episode, checkpoint.feedback_number, checkpoint.weights))
+        if len(checkpoints) == 1:
+            return FeedbackChoice("treasure", 0, "small")
+        return FeedbackChoice()
+
+    def stepback_provider():
+        nonlocal stepped_back
+        if len(checkpoints) == 2 and not stepped_back:
+            stepped_back = True
+            return [2]
+        return []
+
+    result = train(
+        config,
+        MemoryLogger(),
+        feedback_provider=feedback_provider,
+        stepback_provider=stepback_provider,
+    )
+
+    assert [(episode, number) for episode, number, _ in checkpoints] == [(2, 1), (4, 2), (2, 1), (4, 2)]
+    assert checkpoints[0][2] == checkpoints[2][2]
+    assert [event["episode"] for event in result.feedback_history] == [2, 4]
+    assert result.scalar_returns.shape == (5,)
