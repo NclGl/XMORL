@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from typing import Callable, Protocol
+from typing import Callable, Iterable, Protocol
 
 import numpy as np
 
@@ -92,6 +92,7 @@ class MetricLogger(Protocol):
         ...
 
 FeedbackProvider = Callable[[TrainingCheckpoint], FeedbackChoice]
+FeedbackEpisodeProvider = Callable[[int], Iterable[int]]
 
 def _preference_metric_key(index: int) -> str:
     """
@@ -148,6 +149,7 @@ def train(
     config: AppConfig,
     logger: MetricLogger,
     feedback_provider: FeedbackProvider | None = None,
+    feedback_episode_provider: FeedbackEpisodeProvider | None = None,
 ) -> TrainingResult:
     """
     Learn with epsilon-greedy Q-learning and apply feedback at checkpoints
@@ -155,6 +157,7 @@ def train(
     :param config: Validated experiment configuration
     :param logger: Training metric sink
     :param feedback_provider: Optional checkpoint feedback callback
+    :param feedback_episode_provider: Optional source of future feedback episodes
     :return: Learned model and training histories
     """
     settings = config.training
@@ -242,6 +245,9 @@ def train(
                     },
                     step=episode,
                 )
+
+            if feedback_episode_provider is not None:
+                schedule.update(feedback_episode_provider(episode))
 
             if episode in schedule and feedback_provider is not None:
                 feedback_number += 1

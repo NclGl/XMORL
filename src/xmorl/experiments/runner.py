@@ -1,12 +1,112 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+from queue import Empty, Queue
+from threading import Event, Thread
+from typing import Iterable
 
 from xmorl.config import AppConfig
 from xmorl.evaluation import best_episode, build_replay, evaluate, format_summary, representative_episode
 from xmorl.gui import ReplayViewer
 from xmorl.logging import RunLogger
 from xmorl.training import FeedbackChoice, TrainingCheckpoint, train
+from xmorl.utils import feedback_schedule
+
+class CLIFeedbackScheduler:
+    """
+    Collect future feedback episodes from standard input without blocking training
+    """
+
+    def __init__(self, total_episodes: int, scheduled: Iterable[int] = ()):
+        """
+        Prepare a runtime schedule alongside configured feedback episodes
+
+        :param total_episodes: Final training episode
+        :param scheduled: Episodes already present in the configured schedule
+        :return: None
+        """
+        self.total_episodes = total_episodes
+        self._scheduled = set(scheduled)
+        self._requests: Queue[int] = Queue()
+        self._stopped = Event()
+        self._thread: Thread | None = None
+
+    def start(self) -> None:
+        """
+        Start reading feedback episode numbers
+
+        :return: None
+        """
+        print("Runtime feedback scheduling is active. Enter a future episode number and press Enter.")
+        self._thread = Thread(target=self._read, name="xmorl-feedback-input", daemon=True)
+        self._thread.start()
+
+    def stop(self) -> None:
+        """
+        Stop accepting new feedback episode numbers
+
+        :return: None
+        """
+        self._stopped.set()
+
+    def submit(self, value: str) -> None:
+        """
+        Parse and queue one episode entered through the CLI
+
+        :param value: Raw CLI input
+        :return: None
+        """
+        try:
+            episode = int(value.strip())
+        except ValueError:
+            print(f"[feedback scheduler] Rejected {value!r}: enter an integer episode")
+            return
+        self._requests.put(episode)
+
+    def poll(self, current_episode: int) -> set[int]:
+        """
+        Validate queued requests against current training progress
+
+        :param current_episode: Episode that just finished
+        :return: Newly accepted future feedback episodes
+        """
+        accepted = set()
+        while True:
+            try:
+                episode = self._requests.get_nowait()
+            except Empty:
+                break
+            if episode <= current_episode:
+                print(
+                    f"[feedback scheduler] Rejected episode {episode}: "
+                    f"training is already at episode {current_episode}"
+                )
+            elif episode > self.total_episodes:
+                print(
+                    f"[feedback scheduler] Rejected episode {episode}: "
+                    f"training ends at episode {self.total_episodes}"
+                )
+            elif episode in self._scheduled:
+                print(f"[feedback scheduler] Ignored episode {episode}: feedback is already scheduled")
+            else:
+                self._scheduled.add(episode)
+                accepted.add(episode)
+                print(f"[feedback scheduler] Added feedback at episode {episode}")
+        return accepted
+
+    def _read(self) -> None:
+        """
+        Read standard input until it closes or runtime scheduling stops
+
+        :return: None
+        """
+        while not self._stopped.is_set():
+            try:
+                value = input()
+            except (EOFError, OSError):
+                return
+            if not self._stopped.is_set():
+                self.submit(value)
 
 @dataclass
 class InteractiveFeedback:
@@ -70,16 +170,35 @@ class InteractiveFeedback:
         )
         return viewer.run()
 
-def run_experiment(config: AppConfig):
+def run_experiment(config: AppConfig, cli_feedback: bool = True):
     """
     Run the complete XMORL lifecycle and save its results
 
     :param config: Validated experiment configuration
+    :param cli_feedback: Whether future feedback episodes can be entered at runtime
     :return: Completed training result
     """
     with RunLogger(config) as logger:
         feedback = InteractiveFeedback(config, logger) if config.feedback.enabled else None
-        result = train(config, logger, feedback_provider=feedback)
+        scheduler = None
+        if cli_feedback and feedback is not None:
+            scheduled = feedback_schedule(
+                config.training.num_episodes,
+                config.feedback.num_moments,
+                config.feedback.episodes,
+            )
+            scheduler = CLIFeedbackScheduler(config.training.num_episodes, scheduled)
+            scheduler.start()
+        try:
+            result = train(
+                config,
+                logger,
+                feedback_provider=feedback,
+                feedback_episode_provider=scheduler.poll if scheduler is not None else None,
+            )
+        finally:
+            if scheduler is not None:
+                scheduler.stop()
 
         settings = config.evaluation
         seeds = range(settings.final_seed_start, settings.final_seed_start + settings.final_episodes)

@@ -4,7 +4,8 @@ import numpy as np
 
 from xmorl.config import load_config
 from xmorl.evaluation import evaluate
-from xmorl.training import train
+from xmorl.experiments.runner import CLIFeedbackScheduler
+from xmorl.training import FeedbackChoice, train
 
 class MemoryLogger:
     def __init__(self):
@@ -38,3 +39,44 @@ def test_short_training_and_evaluation_smoke():
     )
     assert len(episodes) == 2
     assert np.isfinite(summary["mean_return_scalar"])
+
+def test_training_accepts_runtime_feedback_episodes():
+    config = load_config("configs/sdst.yaml")
+    config = replace(
+        config,
+        training=replace(config.training, num_episodes=4, progress_every=0),
+        feedback=replace(config.feedback, enabled=True, episodes=()),
+        logging=replace(config.logging, log_every=2, wandb_enabled=False),
+    )
+    checkpoints = []
+
+    def feedback_provider(checkpoint):
+        checkpoints.append(checkpoint.episode)
+        return FeedbackChoice()
+
+    def episode_provider(current_episode):
+        return {3} if current_episode == 1 else set()
+
+    train(
+        config,
+        MemoryLogger(),
+        feedback_provider=feedback_provider,
+        feedback_episode_provider=episode_provider,
+    )
+
+    assert checkpoints == [3]
+
+def test_cli_feedback_scheduler_rejects_nonfuture_and_invalid_episodes(capsys):
+    scheduler = CLIFeedbackScheduler(total_episodes=10, scheduled={6})
+    scheduler.submit("5")
+    scheduler.submit("6")
+    scheduler.submit("11")
+    scheduler.submit("not-an-episode")
+    scheduler.submit("8")
+
+    assert scheduler.poll(current_episode=5) == {8}
+    output = capsys.readouterr().out
+    assert "Rejected episode 5" in output
+    assert "already scheduled" in output
+    assert "training ends at episode 10" in output
+    assert "enter an integer episode" in output

@@ -29,7 +29,7 @@ def main() -> None:
     args = build_parser().parse_args()
     from xmorl.experiments import run_experiment
 
-    run_experiment(load_config(args.config))
+    run_experiment(load_config(args.config), cli_feedback=True)
 
 if __name__ == "__main__":
     main()
