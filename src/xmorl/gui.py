@@ -21,11 +21,11 @@ from xmorl.utils import (
     cell_to_pixel,
 )
 
-def _format_probability(value: float) -> str:
+def _format_score(value: float) -> str:
     """
-    Format a probability as a percentage for the action table
+    Format a relative action score as a percentage
 
-    :param value: Probability value
+    :param value: Relative score
     :return: Percentage text
     """
     return f"{100 * float(value):.1f}%"
@@ -134,7 +134,13 @@ def estimate_state_preview(
     """
     adapter = environment_adapter(environment.adapter)
     if not adapter.supports_state_preview:
-        return fallback.copy()
+        objective_q = model.objective_values(state)
+        if objective_q.shape[1] != len(weights):
+            return fallback.copy()
+        return _relative_preview_score(
+            objective_q @ np.asarray(weights, dtype=np.float64),
+            0.0,
+        )
     env = make_env(environment)
     q_values = np.zeros(model.num_actions, dtype=np.float64)
     try:
@@ -146,7 +152,10 @@ def estimate_state_preview(
                 next_observation, reward, terminated, truncated, _ = env.step(action)
                 estimate = linear_utility(reward, weights)
                 if not (terminated or truncated):
-                    next_q, _, _ = model.values(obs_to_state(next_observation))
+                    next_q = model.scalar_values(
+                        obs_to_state(next_observation),
+                        weights,
+                    )
                     estimate += gamma_q * float(np.max(next_q))
                 estimates.append(estimate)
             q_values[action] = np.mean(estimates)
@@ -506,7 +515,7 @@ class ReplayViewer:
         self.explanation.configure(
             text=build_decision_explanation(
                 entry,
-                current,
+                np.asarray(entry["p_values"], dtype=np.float64),
                 self.current_weights,
                 self.action_names,
                 self.environment.objective_names,
@@ -522,7 +531,7 @@ class ReplayViewer:
                 label = f"➜ {label}"
                 tag = ("chosen",)
             delta = 100 * (after[index] - current[index])
-            self.tree.insert("", "end", values=(label, f"{q_value:.4f}", _format_probability(current[index]), _format_probability(after[index]), f"{delta:+.1f} pp"), tags=tag)
+            self.tree.insert("", "end", values=(label, f"{q_value:.4f}", _format_score(current[index]), _format_score(after[index]), f"{delta:+.1f} pp"), tags=tag)
 
     def _back(self) -> None:
         """

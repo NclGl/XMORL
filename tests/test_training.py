@@ -28,6 +28,8 @@ def test_short_training_and_evaluation_smoke():
     assert result.scalar_returns.shape == (8,)
     assert result.vector_returns.shape == (8, 2)
     assert result.model.q
+    assert result.model.objective_q
+    assert all(values.shape[1] == 2 for values in result.model.objective_q.values())
     assert logger.events
 
     episodes, summary = evaluate(

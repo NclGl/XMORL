@@ -30,7 +30,9 @@ class TabularModel:
     """
 
     num_actions: int
+    num_objectives: int = 1
     q: dict[State, np.ndarray] = field(default_factory=dict)
+    objective_q: dict[State, np.ndarray] = field(default_factory=dict)
     p: dict[State, np.ndarray] = field(default_factory=dict)
     visits: dict[State, np.ndarray] = field(default_factory=dict)
 
@@ -43,9 +45,53 @@ class TabularModel:
         """
         if state not in self.q:
             self.q[state] = np.zeros(self.num_actions, dtype=np.float64)
+            self.objective_q[state] = np.zeros(
+                (self.num_actions, self.num_objectives),
+                dtype=np.float64,
+            )
             self.p[state] = np.zeros(self.num_actions, dtype=np.float64)
             self.visits[state] = np.zeros(self.num_actions, dtype=np.int64)
         return self.q[state], self.p[state], self.visits[state]
+
+    def objective_values(self, state: State) -> np.ndarray:
+        """
+        Return action values for a state of an objective
+
+        :param state: Hashable tabular state
+        :return: Action-by-objective value table
+        """
+        self.values(state)
+        return self.objective_q[state]
+
+    def scalar_values(
+        self,
+        state: State,
+        weights: tuple[float, ...],
+    ) -> np.ndarray:
+        """
+        Scalarize objective values for a state with current preferences
+
+        :param state: Hashable tabular state
+        :param weights: Current objective weights
+        :return: Preference action values
+        """
+        if len(weights) != self.num_objectives:
+            raise ValueError(
+                f"Model has {self.num_objectives} objectives but received {len(weights)} weights"
+            )
+        q_values, _, _ = self.values(state)
+        q_values[:] = self.objective_q[state] @ np.asarray(weights, dtype=np.float64)
+        return q_values
+
+    def scalarize(self, weights: tuple[float, ...]) -> None:
+        """
+        Refresh stored scalar values for all known states
+
+        :param weights: Current objective weights
+        :return: None
+        """
+        for state in tuple(self.q):
+            self.scalar_values(state, weights)
 
 @dataclass
 class FeedbackChoice:
@@ -216,7 +262,7 @@ def train(
     if not hasattr(env.action_space, "n"):
         env.close()
         raise TypeError("Tabular Q-learning requires a discrete action space")
-    model = TabularModel(int(env.action_space.n))
+    model = TabularModel(int(env.action_space.n), len(weights))
     schedule = feedback_schedule(
         settings.num_episodes,
         config.feedback.num_moments,
@@ -242,7 +288,9 @@ def train(
             vector_return = np.zeros(len(weights), dtype=np.float64)
 
             while not done:
-                q_values, p_values, visits = model.values(state)
+                q_values = model.scalar_values(state, weights)
+                objective_q_values = model.objective_values(state)
+                _, p_values, visits = model.values(state)
                 if np.random.random() < epsilon:
                     action = int(env.action_space.sample())
                 else:
@@ -259,15 +307,26 @@ def train(
                 visits[action] += 1
 
                 if done:
-                    target_q = utility
+                    target_objective_q = reward
                 else:
                     next_state = obs_to_state(next_observation)
-                    next_q, next_p, _ = model.values(next_state)
+                    next_q = model.scalar_values(next_state, weights)
+                    next_objective_q = model.objective_values(next_state)
+                    _, next_p, _ = model.values(next_state)
                     greedy_next = int(np.argmax(next_q))
-                    target_q = utility + settings.gamma_q * next_q[greedy_next]
+                    target_objective_q = (
+                        reward
+                        + settings.gamma_q * next_objective_q[greedy_next]
+                    )
                     target_p += settings.gamma_p * next_p[greedy_next]
 
-                q_values[action] += settings.alpha_q * (target_q - q_values[action])
+                objective_q_values[action] += settings.alpha_q * (
+                    target_objective_q - objective_q_values[action]
+                )
+                q_values[action] = linear_utility(
+                    objective_q_values[action],
+                    weights,
+                )
                 p_values[action] += settings.alpha_p * (target_p - p_values[action])
                 p_values[action] = np.clip(p_values[action], 0.0, 1.0)
                 scalar_return += utility
@@ -405,6 +464,7 @@ def train(
                 weights, explanation = apply_preference_update(
                     weights, choice.direction, choice.objective, choice.strength, feedback_number
                 )
+                model.scalarize(weights)
                 if weights != before:
                     epsilon = max(epsilon, 0.1)
                     if episode < settings.num_episodes:

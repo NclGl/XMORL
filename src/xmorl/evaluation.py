@@ -59,7 +59,7 @@ def rollout(
         scalar_return = 0.0
         success = exploded = timed_out = 0.0
         for length in range(1, max_steps + 1):
-            q_values, _, _ = model.values(state)
+            q_values = model.scalar_values(state, weights)
             action = int(np.argmax(q_values))
             actions.append(action)
             observation, reward, terminated, truncated, info = env.step(action)
@@ -167,7 +167,8 @@ def build_replay(
         state = obs_to_state(observation)
         frames = []
         for index, action in enumerate(episode.actions):
-            q_values, p_values, _ = model.values(state)
+            q_values = model.scalar_values(state, weights)
+            _, p_values, _ = model.values(state)
             frame = np.asarray(env.render())
             frames.append(frame)
             next_observation, reward, terminated, truncated, info = env.step(action)
@@ -191,7 +192,8 @@ def build_replay(
             state = next_state
             if terminated or truncated:
                 break
-        q_values, p_values, _ = model.values(state)
+        q_values = model.scalar_values(state, weights)
+        _, p_values, _ = model.values(state)
         # final state rendered separately
         entries.append({
             "index": len(entries), "frame": np.asarray(env.render()), "state": state,

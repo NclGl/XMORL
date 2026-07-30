@@ -6,20 +6,35 @@ from xmorl.envs.factory import without_explosions
 from xmorl.gui import estimate_state_preview
 from xmorl.training import TabularModel
 
-def test_default_adapter_uses_learned_preview_without_creating_an_environment():
+def test_default_adapter_rescalarizes_objective_values_without_creating_an_environment():
     fallback = np.array([0.2, 0.8])
+    model = TabularModel(num_actions=2, num_objectives=2)
+    model.objective_values((0, 0))[:] = np.array([
+        [1.0, 0.0],
+        [0.0, 1.0],
+    ])
     result = estimate_state_preview(
         EnvironmentConfig(id="not-registered", adapter="default"),
-        TabularModel(num_actions=2),
+        model,
         state=(0, 0),
-        weights=(0.5, 0.5),
+        weights=(0.8, 0.2),
         gamma_q=0.99,
         seed=0,
         samples=2,
         fallback=fallback,
     )
-    assert np.array_equal(result, fallback)
-    assert result is not fallback
+    changed = estimate_state_preview(
+        EnvironmentConfig(id="not-registered", adapter="default"),
+        model,
+        state=(0, 0),
+        weights=(0.2, 0.8),
+        gamma_q=0.99,
+        seed=0,
+        samples=2,
+        fallback=fallback,
+    )
+    assert np.array_equal(result, np.array([1.0, 0.0]))
+    assert np.array_equal(changed, np.array([0.0, 1.0]))
 
 def test_sdst_adapter_restores_state_and_preview_dynamics():
     class PreviewEnvironment:
