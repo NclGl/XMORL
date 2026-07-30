@@ -3,20 +3,25 @@ from __future__ import annotations
 import csv
 import json
 import os
+import pickle
 from datetime import datetime
 from pathlib import Path
-from typing import Any
+from types import TracebackType
+from typing import TYPE_CHECKING, Any
 import numpy as np
 import wandb
 
 from xmorl.config import AppConfig
+
+if TYPE_CHECKING:
+    from xmorl.training import TrainingResult, TrainingSegment
 
 class _Encoder(json.JSONEncoder):
     """
     Convert scientific values into representations compatible with JSON
     """
 
-    def default(self, value: Any):
+    def default(self, value: Any) -> Any:
         """
         Encode NumPy values and paths before using the standard fallback
 
@@ -128,7 +133,7 @@ class RunLogger:
             writer.writerows(rows)
         return path
 
-    def save_results(self, result, evaluation_summary: dict) -> None:
+    def save_results(self, result: TrainingResult, evaluation_summary: dict) -> None:
         """
         Save legacy feedback, evaluation, and learning artifacts when enabled
 
@@ -150,6 +155,51 @@ class RunLogger:
             ]
             self.write_csv("learning_returns.csv", learning_rows)
 
+    def save_training_segment(self, segment: TrainingSegment) -> Path:
+        """
+        Save a versioned completed interval for comparison after retraining
+
+        :param segment: Completed feedback-to-feedback training interval
+        :return: Directory containing the saved interval
+        """
+        segment_root = (
+            self.run_dir
+            / "training_segments"
+            / f"episodes_{segment.start_episode}_{segment.end_episode}"
+        )
+        segment_root.mkdir(parents=True, exist_ok=True)
+        versions = [
+            int(path.name.removeprefix("version_"))
+            for path in segment_root.glob("version_*")
+            if path.is_dir() and path.name.removeprefix("version_").isdigit()
+        ]
+        version = max(versions, default=0) + 1
+        version_dir = segment_root / f"version_{version:03d}"
+        version_dir.mkdir()
+
+        metadata = {
+            "version": version,
+            "start_episode": segment.start_episode,
+            "end_episode": segment.end_episode,
+            "start_feedback_number": segment.start_feedback_number,
+            "weights": segment.weights,
+            "feedback_event": segment.feedback_event,
+            "correlation_history": segment.correlation_history,
+        }
+        with (version_dir / "metadata.json").open("w", encoding="utf-8") as handle:
+            json.dump(metadata, handle, cls=_Encoder, indent=2)
+        np.savez_compressed(
+            version_dir / "returns.npz",
+            episodes=segment.episode_numbers,
+            scalar_returns=segment.scalar_returns,
+            vector_returns=segment.vector_returns,
+        )
+        with (version_dir / "start_model.pkl").open("wb") as handle:
+            pickle.dump(segment.start_model, handle, protocol=pickle.HIGHEST_PROTOCOL)
+        with (version_dir / "end_model.pkl").open("wb") as handle:
+            pickle.dump(segment.end_model, handle, protocol=pickle.HIGHEST_PROTOCOL)
+        return version_dir
+
     def finish(self) -> None:
         """
         Finish the active external logging session
@@ -159,7 +209,7 @@ class RunLogger:
         if self._wandb_run is not None:
             self._wandb_run.finish()
 
-    def __enter__(self):
+    def __enter__(self) -> RunLogger:
         """
         Return this logger as a managed experiment resource
 
@@ -167,7 +217,12 @@ class RunLogger:
         """
         return self
 
-    def __exit__(self, exc_type, exc_value, traceback):
+    def __exit__(
+        self,
+        exc_type: type[BaseException] | None,
+        exc_value: BaseException | None,
+        traceback: TracebackType | None,
+    ) -> None:
         """
         Close logging when the experiment context exits
 

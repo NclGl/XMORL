@@ -226,6 +226,7 @@ def run_experiment(config: AppConfig, cli_feedback: bool = True):
                 feedback_provider=feedback,
                 feedback_episode_provider=scheduler.poll if scheduler is not None else None,
                 stepback_provider=scheduler.poll_stepbacks if scheduler is not None else None,
+                segment_saver=logger.save_training_segment,
             )
         finally:
             if scheduler is not None:

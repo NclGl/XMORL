@@ -362,7 +362,7 @@ class ReplayViewer:
             ttk.Button(right, text="Close", command=self._close).grid(row=5, column=0, sticky="ew")
         self._update_columns()
 
-    def _update_right_scroll_region(self, _event=None) -> None:
+    def _update_right_scroll_region(self, _event: tk.Event | None = None) -> None:
         """
         Keep the scrollable region aligned with the right panel's contents
 
@@ -371,7 +371,7 @@ class ReplayViewer:
         """
         self.right_canvas.configure(scrollregion=self.right_canvas.bbox("all"))
 
-    def _resize_right_panel(self, event) -> None:
+    def _resize_right_panel(self, event: tk.Event) -> None:
         """
         Match the embedded right panel to the available canvas width
 
@@ -380,7 +380,7 @@ class ReplayViewer:
         """
         self.right_canvas.itemconfigure(self._right_window, width=event.width)
 
-    def _scroll_right_panel(self, event) -> None:
+    def _scroll_right_panel(self, event: tk.Event) -> None:
         """
         Scroll only when the pointer is over the replay's right panel
 
@@ -542,7 +542,7 @@ class ReplayViewer:
         self.index = min(len(self.entries) - 1, self.index + 1)
         self._update_view()
 
-    def _on_left_key(self, _event) -> str:
+    def _on_left_key(self, _event: tk.Event) -> str:
         """
         Handle keyboard navigation to the preceding state
 
@@ -552,7 +552,7 @@ class ReplayViewer:
         self._back()
         return "break"
 
-    def _on_right_key(self, _event) -> str:
+    def _on_right_key(self, _event: tk.Event) -> str:
         """
         Handle keyboard navigation to the following state
 

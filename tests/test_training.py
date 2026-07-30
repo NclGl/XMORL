@@ -94,6 +94,7 @@ def test_training_steps_back_to_before_previous_feedback():
         logging=replace(config.logging, log_every=2, wandb_enabled=False),
     )
     checkpoints = []
+    segments = []
     stepped_back = False
 
     def feedback_provider(checkpoint):
@@ -114,9 +115,54 @@ def test_training_steps_back_to_before_previous_feedback():
         MemoryLogger(),
         feedback_provider=feedback_provider,
         stepback_provider=stepback_provider,
+        segment_saver=segments.append,
     )
 
     assert [(episode, number) for episode, number, _ in checkpoints] == [(2, 1), (4, 2), (2, 1), (4, 2)]
     assert checkpoints[0][2] == checkpoints[2][2]
     assert [event["episode"] for event in result.feedback_history] == [2, 4]
     assert result.scalar_returns.shape == (5,)
+    assert [(segment.start_episode, segment.end_episode) for segment in segments] == [(2, 4), (2, 4)]
+    assert segments[0].weights != segments[1].weights
+    assert segments[0].episode_numbers.tolist() == [3, 4]
+
+def test_training_steps_back_after_runtime_feedback_episode():
+    config = load_config("configs/sdst.yaml")
+    config = replace(
+        config,
+        training=replace(config.training, num_episodes=7, progress_every=0),
+        feedback=replace(config.feedback, enabled=True, episodes=(2,)),
+        logging=replace(config.logging, log_every=2, wandb_enabled=False),
+    )
+    checkpoints = []
+    segments = []
+    stepped_back = False
+
+    def feedback_provider(checkpoint):
+        checkpoints.append((checkpoint.episode, checkpoint.feedback_number))
+        return FeedbackChoice()
+
+    def episode_provider(current_episode):
+        return {5} if current_episode == 1 else set()
+
+    def stepback_provider():
+        nonlocal stepped_back
+        if len(checkpoints) == 2 and not stepped_back:
+            stepped_back = True
+            return [2]
+        return []
+
+    result = train(
+        config,
+        MemoryLogger(),
+        feedback_provider=feedback_provider,
+        feedback_episode_provider=episode_provider,
+        stepback_provider=stepback_provider,
+        segment_saver=segments.append,
+    )
+
+    assert checkpoints == [(2, 1), (5, 2), (2, 1), (5, 2)]
+    assert [(segment.start_episode, segment.end_episode) for segment in segments] == [(2, 5), (2, 5)]
+    assert all(segment.episode_numbers.tolist() == [3, 4, 5] for segment in segments)
+    assert [event["episode"] for event in result.feedback_history] == [2, 5]
+    assert result.scalar_returns.shape == (7,)

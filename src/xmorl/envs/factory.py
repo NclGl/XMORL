@@ -23,7 +23,7 @@ def make_env(config: EnvironmentConfig, render_mode: str | None = None, **overri
     if render_mode is not None:
         kwargs["render_mode"] = render_mode
     # Gymnasium's scalar-reward checker rejects valid multi-objective reward
-    # vectors, so XMORL environments perform their own validation.
+    # vectors so XMORL environments perform their own validation
     try:
         env = gym.make(config.id, disable_env_checker=True, **kwargs)
     except gym.error.Error as e:

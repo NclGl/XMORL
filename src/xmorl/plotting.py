@@ -1,9 +1,13 @@
 from __future__ import annotations
 
 from pathlib import Path
+from typing import TYPE_CHECKING
 
 import matplotlib.pyplot as plt
 import numpy as np
+
+if TYPE_CHECKING:
+    from xmorl.training import TrainingResult
 
 def moving_average(values: np.ndarray, window: int) -> np.ndarray:
     """
@@ -18,7 +22,7 @@ def moving_average(values: np.ndarray, window: int) -> np.ndarray:
         return values.copy()
     return np.convolve(values, np.ones(window) / window, mode="valid")
 
-def plot_learning(result, path: str | Path, window: int = 50, show: bool = True) -> Path:
+def plot_learning(result: TrainingResult, path: str | Path, window: int = 50, show: bool = True) -> Path:
     """
     Save learning curves and mark episodes where preferences changed
 

@@ -2,11 +2,9 @@ from __future__ import annotations
 
 import os
 import random
-from typing import Any, Iterable
+from typing import Any, Iterable, Sequence
 
 import numpy as np
-
-# TODO: add a flag to keep all the raw weights to normalize whenever needed/shown
 
 # FEEDBACK_TOKEN_MAP = {
 #     "O1S": ("objective 1", "small"),
@@ -28,7 +26,7 @@ def set_global_seed(seed: int) -> None:
     random.seed(seed)
     np.random.seed(seed)
 
-def reset_env_with_seed(env: Any, seed: int):
+def reset_env_with_seed(env: Any, seed: int) -> tuple[Any, dict]:
     """
     Reset an environment and seed its sampling spaces consistently
 
@@ -152,7 +150,11 @@ def serialize_weights(weights: Iterable[float]) -> str:
     values = tuple(weights)
     return "(" + ", ".join(f"{value:.10g}" for value in values) + ")"
 
-def cell_to_pixel(cell, image_shape, shape):
+def cell_to_pixel(
+    cell: Sequence[int | float],
+    image_shape: Sequence[int],
+    shape: Sequence[int],
+) -> tuple[float, float]:
     """
     Map a grid-cell center to its coordinates in a rendered frame
 

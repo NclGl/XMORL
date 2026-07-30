@@ -101,7 +101,29 @@ class TrainingSnapshot:
     numpy_random_state: tuple
     python_random_state: object
 
+@dataclass
+class TrainingSegment:
+    """
+    Preserve one completed training interval between feedback moments
+    """
+
+    start_episode: int
+    end_episode: int
+    start_feedback_number: int
+    weights: tuple[float, ...]
+    feedback_event: dict
+    episode_numbers: np.ndarray
+    scalar_returns: np.ndarray
+    vector_returns: np.ndarray
+    correlation_history: list[dict]
+    start_model: TabularModel
+    end_model: TabularModel
+
 class MetricLogger(Protocol):
+    """
+    Accept metrics emitted during training
+    """
+
     def log(self, metrics: dict, step: int | None = None) -> None:
         """
         Log metrics for later analysis
@@ -115,6 +137,7 @@ class MetricLogger(Protocol):
 FeedbackProvider = Callable[[TrainingCheckpoint], FeedbackChoice]
 FeedbackEpisodeProvider = Callable[[int], Iterable[int]]
 StepbackProvider = Callable[[], Iterable[int]]
+SegmentSaver = Callable[[TrainingSegment], object]
 
 def _preference_metric_key(index: int) -> str:
     """
@@ -173,6 +196,7 @@ def train(
     feedback_provider: FeedbackProvider | None = None,
     feedback_episode_provider: FeedbackEpisodeProvider | None = None,
     stepback_provider: StepbackProvider | None = None,
+    segment_saver: SegmentSaver | None = None,
 ) -> TrainingResult:
     """
     Learn with epsilon-greedy Q-learning and apply feedback at checkpoints
@@ -182,6 +206,7 @@ def train(
     :param feedback_provider: Optional checkpoint feedback callback
     :param feedback_episode_provider: Optional source of future feedback episodes
     :param stepback_provider: Optional source of feedback episodes to restore
+    :param segment_saver: Optional destination for completed feedback intervals
     :return: Learned model and training histories
     """
     settings = config.training
@@ -276,6 +301,7 @@ def train(
                 schedule.update(feedback_episode_provider(episode))
 
             stepback_episode = None
+            restored_feedback = False
             if stepback_provider is not None:
                 for requested_episode in stepback_provider():
                     if requested_episode >= episode:
@@ -309,9 +335,54 @@ def train(
                     if saved_episode >= stepback_episode:
                         del snapshots[saved_episode]
                 episode = stepback_episode
+                restored_feedback = True
                 print(f"[training.py] Stepped back to feedback episode {stepback_episode}")
 
             if episode in schedule and feedback_provider is not None:
+                previous_feedback_episode = max(
+                    (saved_episode for saved_episode in snapshots if saved_episode < episode),
+                    default=None,
+                )
+                if (
+                    segment_saver is not None
+                    and previous_feedback_episode is not None
+                    and not restored_feedback
+                ):
+                    start_snapshot = snapshots[previous_feedback_episode]
+                    start_event = next(
+                        event
+                        for event in reversed(feedback_history)
+                        if event["episode"] == previous_feedback_episode
+                    )
+                    segment_saver(
+                        TrainingSegment(
+                            start_episode=previous_feedback_episode,
+                            end_episode=episode,
+                            start_feedback_number=start_event["feedback_number"],
+                            weights=start_event["weights_after"],
+                            feedback_event=deepcopy(start_event),
+                            episode_numbers=np.arange(
+                                previous_feedback_episode + 1,
+                                episode + 1,
+                                dtype=np.int64,
+                            ),
+                            scalar_returns=np.asarray(
+                                scalar_returns[previous_feedback_episode:episode],
+                                dtype=np.float64,
+                            ),
+                            vector_returns=np.asarray(
+                                vector_returns[previous_feedback_episode:episode],
+                                dtype=np.float64,
+                            ),
+                            correlation_history=[
+                                deepcopy(entry)
+                                for entry in correlation_history
+                                if previous_feedback_episode < entry["episode"] <= episode
+                            ],
+                            start_model=deepcopy(start_snapshot.model),
+                            end_model=deepcopy(model),
+                        )
+                    )
                 snapshots[episode] = TrainingSnapshot(
                     episode=episode,
                     feedback_number=feedback_number,
