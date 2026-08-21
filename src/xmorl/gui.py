@@ -49,6 +49,29 @@ def _relative_preview_score(q_values: np.ndarray, stochasticity: float) -> np.nd
     uniform = np.full_like(q_values, 1.0 / len(q_values), dtype=np.float64)
     return np.clip((1 - stochasticity) * scores + stochasticity * uniform, 0, 1)
 
+def objective_bar_specs(
+    current: np.ndarray,
+    after: np.ndarray,
+) -> list[tuple[float, float, str]]:
+    """
+    Prepare clipped preference positions and change colors
+
+    :param current: Current preference values
+    :param after: Proposed preference values
+    :return: Current position, proposed position, and color by objective
+    """
+    specs = []
+    for current_value, after_value in zip(current, after):
+        color = "#2E9D50" if after_value > current_value else "#D14B45"
+        if np.isclose(after_value, current_value):
+            color = "#8A8A8A"
+        specs.append((
+            float(np.clip(current_value, 0, 1)),
+            float(np.clip(after_value, 0, 1)),
+            color,
+        ))
+    return specs
+
 def build_decision_explanation(
     entry: dict,
     success_probabilities: np.ndarray,
@@ -235,6 +258,8 @@ class ReplayViewer:
         self._photo = None
         self._preview_cache: dict[tuple, np.ndarray] = {}
         self._trajectory_frames: dict[int, Image.Image] = {}
+        self._objective_bar_overlays: list[tk.Canvas] = []
+        self._objective_bar_rows: list[tuple[str, np.ndarray, np.ndarray, str]] = []
 
         self.root = tk.Tk()
         self.root.title(title)
@@ -253,22 +278,19 @@ class ReplayViewer:
         :param summary: Evaluation summary text
         :return: None
         """
-        main = ttk.Frame(self.root, padding=12)
-        main.pack(fill="both", expand=True)
-        main.columnconfigure(0, weight=3)
-        main.columnconfigure(1, weight=2)
-        main.rowconfigure(0, weight=1)
-        left = ttk.Frame(main)
-        left.grid(row=0, column=0, sticky="nsew", padx=(0, 12))
+        self.main_pane = ttk.Panedwindow(self.root, orient=tk.HORIZONTAL)
+        self.main_pane.pack(fill="both", expand=True, padx=12, pady=12)
+        left = ttk.Frame(self.main_pane)
         left.rowconfigure(0, weight=1)
         left.columnconfigure(0, weight=1)
         self.image_label = ttk.Label(left, anchor="center")
         self.image_label.grid(row=0, column=0, sticky="nsew")
 
-        right_container = ttk.Frame(main)
-        right_container.grid(row=0, column=1, sticky="nsew")
+        right_container = ttk.Frame(self.main_pane)
         right_container.rowconfigure(0, weight=1)
         right_container.columnconfigure(0, weight=1)
+        self.main_pane.add(left, weight=3)
+        self.main_pane.add(right_container, weight=2)
 
         self.right_canvas = tk.Canvas(right_container, highlightthickness=0, borderwidth=0)
         self.right_canvas.grid(row=0, column=0, sticky="nsew")
@@ -330,11 +352,35 @@ class ReplayViewer:
         self.details = tk.BooleanVar(value=False)
         ttk.Checkbutton(table, text="Show value details", variable=self.details, command=self._update_columns).grid(row=0, column=0, sticky="w")
         self.tree = ttk.Treeview(table, columns=("action", "q", "now", "after", "delta"), show="headings", height=6)
-        for key, label, width in (("action", "Action", 115), ("q", "Q", 80), ("now", "Now", 100), ("after", "After", 105), ("delta", "Δ", 90)):
+        style = ttk.Style(self.root)
+        style.configure(
+            "Objective.Treeview",
+            rowheight=max(24, 22 * len(self.environment.objective_names) + 4),
+        )
+        self.tree = ttk.Treeview(
+            table,
+            columns=("action", "q", "now", "after", "delta", "objectives"),
+            show="headings",
+            height=6,
+            style="Objective.Treeview",
+        )
+        for key, label, width in (
+            ("action", "Action", 115),
+            ("q", "Q", 80),
+            ("now", "Now", 100),
+            ("after", "After", 105),
+            ("delta", "Δ", 90),
+            ("objectives", "Objectives", 225),
+        ):
             self.tree.heading(key, text=label)
             self.tree.column(key, width=width, anchor="center")
+        self.tree.column("objectives", stretch=False)
         self.tree.grid(row=1, column=0, sticky="nsew")
         self.tree.tag_configure("chosen", background="#E8F2FF")
+        self.tree.bind(
+            "<Configure>",
+            lambda _event: self.root.after_idle(self._place_objective_bars),
+        )
 
         if self.allow_feedback:
             preference = ttk.LabelFrame(right, text="Preference change", padding=8)
@@ -417,9 +463,77 @@ class ReplayViewer:
         columns.append("now")
         if self.allow_feedback:
             columns.extend(("after", "delta"))
+        columns.append("objectives")
         self.tree.configure(displaycolumns=columns)
         if self.entries:
             self._update_view()
+
+    def _place_objective_bars(self) -> None:
+        """
+        Position objective graphics inside the final Treeview column
+
+        :return: None
+        """
+        for overlay in self._objective_bar_overlays:
+            overlay.destroy()
+        self._objective_bar_overlays.clear()
+        for item, current, after, background in self._objective_bar_rows:
+            bounds = self.tree.bbox(item, "objectives")
+            if not bounds:
+                continue
+            x, y, width, height = bounds
+            overlay = tk.Canvas(
+                self.tree,
+                background=background,
+                borderwidth=0,
+                highlightthickness=0,
+            )
+            overlay.place(
+                x=x + 1,
+                y=y + 1,
+                width=max(1, width - 2),
+                height=max(1, height - 2),
+            )
+            self._draw_objective_bars(overlay, current, after, width - 2, height - 2)
+            self._objective_bar_overlays.append(overlay)
+
+    def _draw_objective_bars(
+        self,
+        canvas: tk.Canvas,
+        current: np.ndarray,
+        after: np.ndarray,
+        width: int,
+        height: int,
+    ) -> None:
+        """
+        Draw preference bars with Tkinter
+
+        :param canvas: Objective cell drawing surface
+        :param current: Current preference values
+        :param after: Proposed preference values
+        :param width: Available cell width
+        :param height: Available cell height
+        :return: None
+        """
+        margin = 5
+        label_width = min(76, max(50, width // 3))
+        start = label_width + margin
+        end = max(start + 1, width - margin)
+        bar_width = end - start
+        row_height = height / max(len(current), 1)
+        for index, (current_value, after_value, color) in enumerate(
+            objective_bar_specs(current, after)
+        ):
+            middle_y = (index + 0.5) * row_height
+            name = self.environment.objective_names[index] if index < len(self.environment.objective_names) else f"objective {index + 1}"
+            current_x = start + current_value * bar_width
+            after_x = start + after_value * bar_width
+            canvas.create_text(margin, middle_y, text=name[:11], fill="#202020", anchor="w")
+            canvas.create_line(start, middle_y, end, middle_y, fill="#D5D5D5", width=2)
+            canvas.create_line(start, middle_y, current_x, middle_y, fill="#A0A0A0", width=5)
+            canvas.create_line(current_x, middle_y, after_x, middle_y, fill=color, width=6)
+            canvas.create_line(current_x, middle_y - 9, current_x, middle_y + 9, fill="#111111", width=2)
+            canvas.create_line(after_x, middle_y - 9, after_x, middle_y + 9, fill=color, width=2)
 
     def _preference_changed(self) -> None:
         """
@@ -509,9 +623,12 @@ class ReplayViewer:
         action = entry["action"]
         current = self._preview(entry, self.current_weights)
         after = current
+        new_weights = self.current_weights
         if self.allow_feedback and self.direction.get() != "keep":
             new_weights, _ = apply_preference_update(self.current_weights, self.direction.get(), self.objective.get(), self.strength.get(), self.feedback_number)
             after = self._preview(entry, new_weights)
+        current_preferences = np.asarray(self.current_weights, dtype=np.float64)
+        after_preferences = np.asarray(new_weights, dtype=np.float64)
         self.explanation.configure(
             text=build_decision_explanation(
                 entry,
@@ -522,16 +639,36 @@ class ReplayViewer:
                 self.long_explanation,
             )
         )
+        for overlay in self._objective_bar_overlays:
+            overlay.destroy()
+        self._objective_bar_overlays.clear()
+        self._objective_bar_rows.clear()
         for item in self.tree.get_children():
             self.tree.delete(item)
         for index, q_value in enumerate(entry["q_values"]):
             label = self.action_names.get(index, str(index))
             tag = ()
+            background = "white"
             if action == index:
                 label = f"➜ {label}"
                 tag = ("chosen",)
+                background = "#E8F2FF"
             delta = 100 * (after[index] - current[index])
-            self.tree.insert("", "end", values=(label, f"{q_value:.4f}", _format_score(current[index]), _format_score(after[index]), f"{delta:+.1f} pp"), tags=tag)
+            item = self.tree.insert(
+                "",
+                "end",
+                values=(
+                    label,
+                    f"{q_value:.4f}",
+                    _format_score(current[index]),
+                    _format_score(after[index]),
+                    f"{delta:+.1f} pp",
+                    "",
+                ),
+                tags=tag,
+            )
+            self._objective_bar_rows.append((item, current_preferences, after_preferences, background))
+        self.root.after_idle(self._place_objective_bars)
 
     def _back(self) -> None:
         """

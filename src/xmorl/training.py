@@ -81,7 +81,7 @@ class TabularModel:
             )
         q_values, _, _ = self.values(state)
         q_values[:] = self.objective_q[state] @ np.asarray(weights, dtype=np.float64)
-        return q_values
+        return q_values # = SQList in adprl's paper
 
     def scalarize(self, weights: tuple[float, ...]) -> None:
         """

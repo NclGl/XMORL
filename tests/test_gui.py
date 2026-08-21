@@ -1,6 +1,9 @@
 import numpy as np
 
-from xmorl.gui import build_decision_explanation
+from xmorl.gui import (
+    build_decision_explanation,
+    objective_bar_specs,
+)
 
 def test_decision_explanation_contains_policy_and_objective_attribution():
     entry = {
@@ -36,3 +39,17 @@ def test_final_state_explanation_mentions_terminal_reason():
     )
     assert "final state" in explanation
     assert "treasure" in explanation
+
+def test_objective_bars_compare_current_and_proposed_preferences():
+    current = np.array([0.5, 0.5])
+    after = np.array([0.75, 0.25])
+    specs = objective_bar_specs(current, after)
+
+    assert specs == [(0.5, 0.75, "#2E9D50"), (0.5, 0.25, "#D14B45")]
+
+def test_current_objective_marker_does_not_move_with_proposed_value():
+    current = np.array([0.4])
+    increase = objective_bar_specs(current, np.array([0.9]))
+    decrease = objective_bar_specs(current, np.array([0.1]))
+
+    assert increase[0][0] == decrease[0][0]
